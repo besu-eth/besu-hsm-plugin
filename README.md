@@ -20,6 +20,7 @@ The plugin sits between the Besu client (validator) and HSM providers using the 
 * [Besu HSM Plugin Issues]
 * [Besu Wiki](https://lf-hyperledger.atlassian.net/wiki/spaces/BESU/)
 * [How to Contribute to Besu](https://lf-hyperledger.atlassian.net/wiki/spaces/BESU/pages/22156850/How+to+Contribute)
+* [Besu Maintainers](https://github.com/besu-eth/besu/blob/main/MAINTAINERS.md)
 
 ## Issues
 
