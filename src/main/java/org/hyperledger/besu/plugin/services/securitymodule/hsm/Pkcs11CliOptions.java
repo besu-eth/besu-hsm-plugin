@@ -23,21 +23,18 @@ public class Pkcs11CliOptions {
   @Option(
       names = "--plugin-" + SECURITY_MODULE_NAME + "-config-path",
       description = "Path to the PKCS11 configuration file",
-      required = true,
       paramLabel = "<path>")
   private Path pkcs11ConfigPath;
 
   @Option(
       names = "--plugin-" + SECURITY_MODULE_NAME + "-password-path",
       description = "Path to the file that contains password or PIN to access PKCS11 token",
-      required = true,
       paramLabel = "<path>")
   private Path pkcs11PasswordPath;
 
   @Option(
       names = "--plugin-" + SECURITY_MODULE_NAME + "-key-alias",
       description = "Alias or label of the private key that is stored in the HSM",
-      required = true,
       paramLabel = "<label>")
   private String privateKeyAlias;
 
