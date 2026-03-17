@@ -17,16 +17,29 @@ package org.hyperledger.besu.plugin.services.securitymodule.hsm;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Optional;
+import java.util.function.Supplier;
+import org.hyperledger.besu.plugin.ServiceManager;
+import org.hyperledger.besu.plugin.services.PicoCLIOptions;
+import org.hyperledger.besu.plugin.services.SecurityModuleService;
+import org.hyperledger.besu.plugin.services.securitymodule.SecurityModule;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class HsmPluginTest {
 
   private HsmPlugin hsmPlugin;
+  private ServiceManager serviceManager;
+  private final StubSecurityModuleService securityModuleService = new StubSecurityModuleService();
 
   @BeforeEach
   void setUp() {
     hsmPlugin = new HsmPlugin();
+    serviceManager = new ServiceManager.SimpleServiceManager();
+    serviceManager.addService(PicoCLIOptions.class, (namespace, optionObject) -> {});
+    serviceManager.addService(SecurityModuleService.class, securityModuleService);
   }
 
   @Test
@@ -36,7 +49,13 @@ class HsmPluginTest {
 
   @Test
   void registerDoesNotThrow() {
-    assertThatNoException().isThrownBy(() -> hsmPlugin.register(null));
+    assertThatNoException().isThrownBy(() -> hsmPlugin.register(serviceManager));
+  }
+
+  @Test
+  void registerRegistersSecurityModule() {
+    hsmPlugin.register(serviceManager);
+    assertThat(securityModuleService.getByName("pkcs11-hsm")).isPresent();
   }
 
   @Test
@@ -47,5 +66,19 @@ class HsmPluginTest {
   @Test
   void stopDoesNotThrow() {
     assertThatNoException().isThrownBy(() -> hsmPlugin.stop());
+  }
+
+  private static class StubSecurityModuleService implements SecurityModuleService {
+    private final Map<String, Supplier<SecurityModule>> modules = new HashMap<>();
+
+    @Override
+    public void register(final String name, final Supplier<SecurityModule> securityModuleSupplier) {
+      modules.put(name, securityModuleSupplier);
+    }
+
+    @Override
+    public Optional<Supplier<SecurityModule>> getByName(final String name) {
+      return Optional.ofNullable(modules.get(name));
+    }
   }
 }
