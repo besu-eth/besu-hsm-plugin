@@ -33,6 +33,8 @@ dependencies {
   // Use JUnit Jupiter for testing.
   testImplementation libs.junit.jupiter
   testImplementation libs.assertj.core
+  testImplementation 'org.mockito:mockito-core'
+  testImplementation 'org.mockito:mockito-junit-jupiter'
 
   testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }

@@ -14,6 +14,11 @@
  */
 package org.hyperledger.besu.plugin.services.securitymodule.hsm;
 
+import java.security.NoSuchAlgorithmException;
+import java.security.PrivateKey;
+import java.security.Provider;
+import java.security.interfaces.ECPublicKey;
+import javax.crypto.KeyAgreement;
 import org.apache.tuweni.bytes.Bytes32;
 import org.hyperledger.besu.plugin.services.securitymodule.SecurityModule;
 import org.hyperledger.besu.plugin.services.securitymodule.SecurityModuleException;
@@ -24,27 +29,100 @@ import org.slf4j.LoggerFactory;
 
 public class Pkcs11SecurityModule implements SecurityModule {
   private static final Logger LOG = LoggerFactory.getLogger(Pkcs11SecurityModule.class);
+  private static final String KEY_AGREEMENT_ALGORITHM = "ECDH";
 
-  private final Pkcs11CliOptions cliOptions;
+  private final Provider provider;
+  private final PrivateKey privateKey;
+  private final ECPublicKey ecPublicKey;
+  private final String signatureAlgorithm;
+  private final boolean useP1363;
 
   public Pkcs11SecurityModule(final Pkcs11CliOptions cliOptions) {
     LOG.debug("Creating Pkcs11SecurityModule ...");
-    this.cliOptions = cliOptions;
+    validateCliOptions(cliOptions);
+    final Pkcs11Provider pkcs11Provider =
+        new Pkcs11Provider(
+            cliOptions.getPkcs11ConfigPath(),
+            cliOptions.getPkcs11PasswordPath(),
+            cliOptions.getPrivateKeyAlias());
+    this.provider = pkcs11Provider.getProvider();
+    this.privateKey = pkcs11Provider.getPrivateKey();
+    this.ecPublicKey = pkcs11Provider.getEcPublicKey();
+    this.useP1363 = probeP1363Support();
+    this.signatureAlgorithm = useP1363 ? "NONEwithECDSAinP1363Format" : "NONEWithECDSA";
+    LOG.info("Using signature algorithm: {}", signatureAlgorithm);
+  }
+
+  Pkcs11SecurityModule(
+      final Provider provider,
+      final PrivateKey privateKey,
+      final ECPublicKey ecPublicKey,
+      final String signatureAlgorithm,
+      final boolean useP1363) {
+    this.provider = provider;
+    this.privateKey = privateKey;
+    this.ecPublicKey = ecPublicKey;
+    this.signatureAlgorithm = signatureAlgorithm;
+    this.useP1363 = useP1363;
+  }
+
+  private static void validateCliOptions(final Pkcs11CliOptions cliOptions) {
+    if (cliOptions.getPkcs11ConfigPath() == null) {
+      throw new SecurityModuleException("PKCS#11 configuration file path is not provided");
+    }
+    if (cliOptions.getPkcs11PasswordPath() == null) {
+      throw new SecurityModuleException("PKCS#11 password file path is not provided");
+    }
+    if (cliOptions.getPrivateKeyAlias() == null) {
+      throw new SecurityModuleException("PKCS#11 private key alias is not provided");
+    }
+  }
+
+  private boolean probeP1363Support() {
+    try {
+      java.security.Signature.getInstance("NONEwithECDSAinP1363Format", provider);
+      return true;
+    } catch (final NoSuchAlgorithmException e) {
+      LOG.info(
+          "Provider does not support NONEwithECDSAinP1363Format, falling back to NONEWithECDSA");
+      return false;
+    }
   }
 
   @Override
   public Signature sign(final Bytes32 dataHash) throws SecurityModuleException {
-    throw new SecurityModuleException("Not yet implemented");
+    try {
+      final java.security.Signature signature =
+          java.security.Signature.getInstance(signatureAlgorithm, provider);
+      signature.initSign(privateKey);
+      signature.update(dataHash.toArray());
+      final byte[] sigBytes = signature.sign();
+      return SignatureUtil.extractRAndS(sigBytes, useP1363);
+    } catch (final SecurityModuleException e) {
+      throw e;
+    } catch (final Exception e) {
+      throw new SecurityModuleException("Error signing data", e);
+    }
   }
 
   @Override
   public PublicKey getPublicKey() throws SecurityModuleException {
-    throw new SecurityModuleException("Not yet implemented");
+    return ecPublicKey::getW;
   }
 
   @Override
   public Bytes32 calculateECDHKeyAgreement(final PublicKey partyKey)
       throws SecurityModuleException {
-    throw new SecurityModuleException("Not yet implemented");
+    LOG.debug("Calculating ECDH key agreement ...");
+    final java.security.PublicKey theirPublicKey =
+        SignatureUtil.ecPointToJcePublicKey(partyKey.getW(), provider);
+    try {
+      final KeyAgreement keyAgreement = KeyAgreement.getInstance(KEY_AGREEMENT_ALGORITHM, provider);
+      keyAgreement.init(privateKey);
+      keyAgreement.doPhase(theirPublicKey, true);
+      return Bytes32.wrap(keyAgreement.generateSecret());
+    } catch (final Exception e) {
+      throw new SecurityModuleException("Error calculating ECDH key agreement", e);
+    }
   }
 }
