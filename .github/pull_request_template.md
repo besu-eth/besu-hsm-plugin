@@ -14,3 +14,4 @@
 ### Locally, you can run these tests to catch failures early:
 
 - [ ] unit tests: `./gradlew build`
+- [ ] integration tests: `./gradlew integrationTest` (requires Docker)
