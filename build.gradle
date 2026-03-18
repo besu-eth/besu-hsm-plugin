@@ -51,6 +51,35 @@ tasks.named('test') {
   useJUnitPlatform()
 }
 
+// Integration test source set and task
+sourceSets {
+  integrationTest {
+    java.srcDir 'src/integrationTest/java'
+    resources.srcDir 'src/integrationTest/resources'
+    compileClasspath += sourceSets.main.output + sourceSets.test.output
+    runtimeClasspath += sourceSets.main.output + sourceSets.test.output
+  }
+}
+
+configurations {
+  integrationTestImplementation.extendsFrom testImplementation
+  integrationTestRuntimeOnly.extendsFrom testRuntimeOnly
+}
+
+dependencies {
+  integrationTestImplementation libs.testcontainers
+  integrationTestImplementation libs.testcontainers.junit.jupiter
+}
+
+tasks.register('integrationTest', Test) {
+  description = 'Runs integration tests.'
+  group = 'verification'
+  testClassesDirs = sourceSets.integrationTest.output.classesDirs
+  classpath = sourceSets.integrationTest.runtimeClasspath
+  dependsOn distZip
+  useJUnitPlatform()
+}
+
 spotless {
   java {
     importOrder('org.hyperledger', 'java', '')
