@@ -9,6 +9,7 @@ RUN apt-get update && \
         opensc \
         gnutls-bin \
         openssl \
+        libengine-pkcs11-openssl \
         unzip && \
     rm -rf /var/lib/apt/lists/*
 
@@ -24,6 +25,7 @@ COPY config/pkcs11-hsm-password.txt /etc/besu/config/pkcs11-hsm-password.txt
 ENV SOFTHSM2_CONF=/etc/softhsm2.conf
 
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+COPY entrypoint-keypairgen.sh /entrypoint-keypairgen.sh
+RUN chmod +x /entrypoint.sh /entrypoint-keypairgen.sh
 
 USER besu
