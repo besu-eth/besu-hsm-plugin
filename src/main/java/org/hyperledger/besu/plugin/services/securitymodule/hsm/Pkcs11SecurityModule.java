@@ -14,7 +14,6 @@
  */
 package org.hyperledger.besu.plugin.services.securitymodule.hsm;
 
-import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
 import java.security.Provider;
 import java.security.interfaces.ECPublicKey;
@@ -30,12 +29,11 @@ import org.slf4j.LoggerFactory;
 public class Pkcs11SecurityModule implements SecurityModule {
   private static final Logger LOG = LoggerFactory.getLogger(Pkcs11SecurityModule.class);
   private static final String KEY_AGREEMENT_ALGORITHM = "ECDH";
+  private static final String SIGNATURE_ALGORITHM = "NONEWithECDSA";
 
   private final Provider provider;
   private final PrivateKey privateKey;
   private final ECPublicKey ecPublicKey;
-  private final String signatureAlgorithm;
-  private final boolean useP1363;
 
   public Pkcs11SecurityModule(final Pkcs11CliOptions cliOptions) {
     LOG.debug("Creating Pkcs11SecurityModule ...");
@@ -48,22 +46,41 @@ public class Pkcs11SecurityModule implements SecurityModule {
     this.provider = pkcs11Provider.getProvider();
     this.privateKey = pkcs11Provider.getPrivateKey();
     this.ecPublicKey = pkcs11Provider.getEcPublicKey();
-    this.useP1363 = probeP1363Support();
-    this.signatureAlgorithm = useP1363 ? "NONEwithECDSAinP1363Format" : "NONEWithECDSA";
-    LOG.info("Using signature algorithm: {}", signatureAlgorithm);
+    LOG.info("Using signature algorithm: {}", SIGNATURE_ALGORITHM);
+
+    LOG.info(
+        "privateKey class={}, ecPublicKey class={}",
+        privateKey.getClass().getName(),
+        ecPublicKey.getClass().getName());
+
+    // Test sign to verify PKCS#11 signing works — wrap each call separately
+    try {
+      LOG.info("Test sign: getting Signature instance ...");
+      final java.security.Signature testSig =
+          java.security.Signature.getInstance(SIGNATURE_ALGORITHM, provider);
+      LOG.info("Test sign: Signature instance OK (provider={})", testSig.getProvider().getName());
+
+      LOG.info("Test sign: calling initSign ...");
+      testSig.initSign(privateKey);
+      LOG.info("Test sign: initSign OK");
+
+      LOG.info("Test sign: calling update with 32 bytes ...");
+      testSig.update(new byte[32]);
+      LOG.info("Test sign: update OK");
+
+      LOG.info("Test sign: calling sign() ...");
+      final byte[] testResult = testSig.sign();
+      LOG.info("Test sign: SUCCESS sigLen={}", testResult.length);
+    } catch (final Exception e) {
+      LOG.error("Test sign: FAILED", e);
+    }
   }
 
   Pkcs11SecurityModule(
-      final Provider provider,
-      final PrivateKey privateKey,
-      final ECPublicKey ecPublicKey,
-      final String signatureAlgorithm,
-      final boolean useP1363) {
+      final Provider provider, final PrivateKey privateKey, final ECPublicKey ecPublicKey) {
     this.provider = provider;
     this.privateKey = privateKey;
     this.ecPublicKey = ecPublicKey;
-    this.signatureAlgorithm = signatureAlgorithm;
-    this.useP1363 = useP1363;
   }
 
   private static void validateCliOptions(final Pkcs11CliOptions cliOptions) {
@@ -78,26 +95,15 @@ public class Pkcs11SecurityModule implements SecurityModule {
     }
   }
 
-  private boolean probeP1363Support() {
-    try {
-      java.security.Signature.getInstance("NONEwithECDSAinP1363Format", provider);
-      return true;
-    } catch (final NoSuchAlgorithmException e) {
-      LOG.info(
-          "Provider does not support NONEwithECDSAinP1363Format, falling back to NONEWithECDSA");
-      return false;
-    }
-  }
-
   @Override
   public Signature sign(final Bytes32 dataHash) throws SecurityModuleException {
     try {
       final java.security.Signature signature =
-          java.security.Signature.getInstance(signatureAlgorithm, provider);
+          java.security.Signature.getInstance(SIGNATURE_ALGORITHM, provider);
       signature.initSign(privateKey);
       signature.update(dataHash.toArray());
       final byte[] sigBytes = signature.sign();
-      return SignatureUtil.extractRAndS(sigBytes, useP1363);
+      return SignatureUtil.extractRAndS(sigBytes, false);
     } catch (final SecurityModuleException e) {
       throw e;
     } catch (final Exception e) {
