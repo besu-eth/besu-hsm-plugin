@@ -134,8 +134,19 @@ Instructions for how to get started with developing on the Besu HSM Plugin codeb
 ### Running Tests
 
 ```bash
+# Unit tests
 ./gradlew test
+
+# Integration tests (requires Docker)
+./gradlew integrationTest
 ```
+
+> **Note:** Integration tests currently run against the `hyperledger/besu:develop` Docker image.
+> This is because the [besu-native-ec static OpenSSL fix](https://github.com/besu-eth/besu/pull/10096)
+> has been merged but is not yet included in a Besu release. Once a Besu release containing this fix
+> is available, we need to:
+> 1. Update the Besu version in `build.gradle` (plugin dependency)
+> 2. Update the `BESU_VERSION` ARG in `docker/qbft-softhsm2/Dockerfile` to match the release tag
 
 [Besu HSM Plugin Issues]: https://github.com/besu-eth/besu-hsm-plugin/issues
 [Besu channel on Discord]: https://discord.com/invite/hyperledger

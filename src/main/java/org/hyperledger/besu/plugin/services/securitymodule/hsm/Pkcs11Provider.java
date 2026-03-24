@@ -42,7 +42,7 @@ class Pkcs11Provider {
   }
 
   private Provider initializeProvider(final Path configPath) {
-    LOG.info("Initializing PKCS#11 provider with config: {} ...", configPath);
+    LOG.info("Initializing PKCS#11 provider ...");
     try {
       final Provider sunPKCS11 = Security.getProvider("SunPKCS11");
       if (sunPKCS11 == null) {
@@ -52,13 +52,7 @@ class Pkcs11Provider {
       if (configured == null) {
         throw new SecurityModuleException("Unable to configure SunPKCS11 provider");
       }
-      final int position = Security.addProvider(configured);
-      LOG.info(
-          "Added PKCS#11 provider: name={}, class={}, position={}, classLoader={}",
-          configured.getName(),
-          configured.getClass().getName(),
-          position,
-          Pkcs11Provider.class.getClassLoader());
+      Security.addProvider(configured);
       return configured;
     } catch (final SecurityModuleException e) {
       throw e;

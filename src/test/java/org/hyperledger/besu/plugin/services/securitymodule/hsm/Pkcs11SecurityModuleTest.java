@@ -56,7 +56,7 @@ class Pkcs11SecurityModuleTest {
 
   @BeforeEach
   void setUp() {
-    module = new Pkcs11SecurityModule(provider, privateKey, ecPublicKey);
+    module = new Pkcs11SecurityModule(provider, privateKey, ecPublicKey, "NONEWithECDSA", false);
   }
 
   @Test
