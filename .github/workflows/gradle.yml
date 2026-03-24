@@ -46,4 +46,13 @@ jobs:
       uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
 
     - name: Run integration tests
-      run: ./gradlew integrationTest
+      run: ./gradlew integrationTest --info
+
+    - name: Upload integration test reports
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: integration-test-reports
+        path: |
+          build/reports/tests/integrationTest/
+        retention-days: 7
