@@ -1,5 +1,4 @@
-ARG BESU_VERSION=26.2.0
-FROM hyperledger/besu:${BESU_VERSION}
+FROM hyperledger/besu:develop
 
 USER root
 

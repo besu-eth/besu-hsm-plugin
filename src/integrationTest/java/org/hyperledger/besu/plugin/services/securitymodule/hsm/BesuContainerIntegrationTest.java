@@ -32,7 +32,6 @@ import org.testcontainers.utility.MountableFile;
 class BesuContainerIntegrationTest {
 
   private static final String BESU_HSM_IMAGE_NAME = "besu-hsm-test";
-  private static final String BESU_VERSION = "26.2.0";
   private static final Path DOCKER_DIR =
       Path.of(System.getProperty("user.dir"), "docker", "softhsm");
   private static final Path DIST_ZIP =
@@ -47,7 +46,6 @@ class BesuContainerIntegrationTest {
   static void buildImage() {
     besuHsmImage =
         new ImageFromDockerfile(BESU_HSM_IMAGE_NAME, false)
-            .withBuildArg("BESU_VERSION", BESU_VERSION)
             .withDockerfile(DOCKER_DIR.resolve("Dockerfile"));
   }
 

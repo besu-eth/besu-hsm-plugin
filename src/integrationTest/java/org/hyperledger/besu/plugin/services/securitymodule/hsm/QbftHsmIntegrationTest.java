@@ -129,6 +129,7 @@ class QbftHsmIntegrationTest {
             .withFileSystemBind(tokenDir.toString(), "/var/lib/tokens")
             .withCreateContainerCmdModifier(
                 cmd -> {
+                  cmd.withUser("root");
                   cmd.withEntrypoint("/entrypoint-setup.sh");
                   cmd.withCmd(String.valueOf(nodeIndex));
                 })
@@ -149,6 +150,7 @@ class QbftHsmIntegrationTest {
             .withFileSystemBind(sharedDataDir.toString(), "/data")
             .withCreateContainerCmdModifier(
                 cmd -> {
+                  cmd.withUser("root");
                   cmd.withEntrypoint("/generate-genesis.sh");
                   cmd.withCmd(String.valueOf(NODE_COUNT));
                 })

@@ -1,5 +1,4 @@
-ARG BESU_VERSION=develop
-FROM hyperledger/besu:${BESU_VERSION}
+FROM hyperledger/besu:develop
 
 USER root
 
