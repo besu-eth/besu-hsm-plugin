@@ -23,8 +23,9 @@ if ! pkcs11-tool --module "${MODULE}" --login --pin "${PIN}" \
     exit 1
 fi
 
-# Fix token file ownership so the besu user can access SoftHSM2 data
-chown -R besu:besu /var/lib/tokens
+# Fix ownership on bind-mounted volumes so the besu user can access them.
+# Phase 1 and 2 run as root, creating files owned by root in these mounts.
+chown -R besu:besu /var/lib/tokens /data
 
 echo "Starting Besu ..."
 exec su -s /bin/bash besu -c "/opt/besu/bin/besu $*"
