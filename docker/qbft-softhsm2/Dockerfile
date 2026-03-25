@@ -27,4 +27,6 @@ COPY generate-genesis.sh /generate-genesis.sh
 COPY entrypoint-besu.sh /entrypoint-besu.sh
 RUN chmod +x /entrypoint-setup.sh /generate-genesis.sh /entrypoint-besu.sh
 
-USER besu
+## Note: no USER directive — align with base image (root).
+## The official Besu entrypoint switches to the besu user at runtime,
+## and entrypoint-besu.sh follows the same pattern.
