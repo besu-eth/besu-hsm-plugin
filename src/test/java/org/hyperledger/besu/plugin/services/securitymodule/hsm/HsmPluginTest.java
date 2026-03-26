@@ -55,7 +55,7 @@ class HsmPluginTest {
   @Test
   void registerRegistersSecurityModule() {
     hsmPlugin.register(serviceManager);
-    assertThat(securityModuleService.getByName("pkcs11-hsm")).isPresent();
+    assertThat(securityModuleService.getByName(HsmPlugin.SECURITY_MODULE_NAME)).isPresent();
   }
 
   @Test

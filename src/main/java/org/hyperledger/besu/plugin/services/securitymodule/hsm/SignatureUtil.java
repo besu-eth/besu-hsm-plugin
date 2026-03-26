@@ -18,6 +18,7 @@ import static org.hyperledger.besu.plugin.services.securitymodule.hsm.Secp256k1P
 import static org.hyperledger.besu.plugin.services.securitymodule.hsm.Secp256k1Parameters.HALF_CURVE_ORDER;
 import static org.hyperledger.besu.plugin.services.securitymodule.hsm.Secp256k1Parameters.SECP256K1_PARAM_SPEC;
 
+import java.io.ByteArrayOutputStream;
 import java.math.BigInteger;
 import java.security.KeyFactory;
 import java.security.NoSuchAlgorithmException;
@@ -25,8 +26,11 @@ import java.security.Provider;
 import java.security.spec.ECPoint;
 import java.security.spec.ECPublicKeySpec;
 import java.security.spec.InvalidKeySpecException;
+import org.bouncycastle.asn1.ASN1EncodableVector;
 import org.bouncycastle.asn1.ASN1InputStream;
 import org.bouncycastle.asn1.ASN1Integer;
+import org.bouncycastle.asn1.ASN1OutputStream;
+import org.bouncycastle.asn1.DERSequence;
 import org.bouncycastle.asn1.DLSequence;
 import org.hyperledger.besu.plugin.services.securitymodule.SecurityModuleException;
 import org.hyperledger.besu.plugin.services.securitymodule.data.Signature;
@@ -81,6 +85,21 @@ final class SignatureUtil {
     }
 
     return new SignatureImpl(r, canonicalS);
+  }
+
+  static byte[] toDer(final BigInteger r, final BigInteger s) {
+    try {
+      final ASN1EncodableVector v = new ASN1EncodableVector();
+      v.add(new ASN1Integer(r));
+      v.add(new ASN1Integer(s));
+      final ByteArrayOutputStream baos = new ByteArrayOutputStream();
+      final ASN1OutputStream asnOs = ASN1OutputStream.create(baos);
+      asnOs.writeObject(new DERSequence(v));
+      asnOs.flush();
+      return baos.toByteArray();
+    } catch (final Exception e) {
+      throw new SecurityModuleException("Error encoding signature to DER", e);
+    }
   }
 
   static java.security.PublicKey ecPointToJcePublicKey(

@@ -14,6 +14,7 @@
  */
 package org.hyperledger.besu.plugin.services.securitymodule.hsm;
 
+import com.google.common.annotations.VisibleForTesting;
 import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
 import java.security.Provider;
@@ -31,37 +32,41 @@ public class Pkcs11SecurityModule implements SecurityModule {
   private static final Logger LOG = LoggerFactory.getLogger(Pkcs11SecurityModule.class);
   private static final String KEY_AGREEMENT_ALGORITHM = "ECDH";
 
+  private final Pkcs11Provider pkcs11Provider;
   private final Provider provider;
   private final PrivateKey privateKey;
-  private final ECPublicKey ecPublicKey;
+  private final PublicKey publicKey;
   private final String signatureAlgorithm;
   private final boolean useP1363;
 
   public Pkcs11SecurityModule(final Pkcs11CliOptions cliOptions) {
     LOG.debug("Creating Pkcs11SecurityModule ...");
     validateCliOptions(cliOptions);
-    final Pkcs11Provider pkcs11Provider =
+    this.pkcs11Provider =
         new Pkcs11Provider(
             cliOptions.getPkcs11ConfigPath(),
             cliOptions.getPkcs11PasswordPath(),
             cliOptions.getPrivateKeyAlias());
     this.provider = pkcs11Provider.getProvider();
     this.privateKey = pkcs11Provider.getPrivateKey();
-    this.ecPublicKey = pkcs11Provider.getEcPublicKey();
+    final ECPublicKey ecPublicKey = pkcs11Provider.getEcPublicKey();
+    this.publicKey = ecPublicKey::getW;
     this.useP1363 = probeP1363Support();
     this.signatureAlgorithm = useP1363 ? "NONEwithECDSAinP1363Format" : "NONEWithECDSA";
     LOG.info("Using signature algorithm: {}", signatureAlgorithm);
   }
 
+  @VisibleForTesting
   Pkcs11SecurityModule(
       final Provider provider,
       final PrivateKey privateKey,
       final ECPublicKey ecPublicKey,
       final String signatureAlgorithm,
       final boolean useP1363) {
+    this.pkcs11Provider = null;
     this.provider = provider;
     this.privateKey = privateKey;
-    this.ecPublicKey = ecPublicKey;
+    this.publicKey = ecPublicKey::getW;
     this.signatureAlgorithm = signatureAlgorithm;
     this.useP1363 = useP1363;
   }
@@ -107,7 +112,7 @@ public class Pkcs11SecurityModule implements SecurityModule {
 
   @Override
   public PublicKey getPublicKey() throws SecurityModuleException {
-    return ecPublicKey::getW;
+    return publicKey;
   }
 
   @Override
@@ -123,6 +128,12 @@ public class Pkcs11SecurityModule implements SecurityModule {
       return Bytes32.wrap(keyAgreement.generateSecret());
     } catch (final Exception e) {
       throw new SecurityModuleException("Error calculating ECDH key agreement", e);
+    }
+  }
+
+  void removeProvider() {
+    if (pkcs11Provider != null) {
+      pkcs11Provider.removeProvider();
     }
   }
 }

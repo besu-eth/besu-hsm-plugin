@@ -28,6 +28,7 @@ public class HsmPlugin implements BesuPlugin {
   private static final Logger LOG = LoggerFactory.getLogger(HsmPlugin.class);
 
   private final Pkcs11CliOptions cliOptions = new Pkcs11CliOptions();
+  private volatile Pkcs11SecurityModule module;
 
   @Override
   public void register(final ServiceManager serviceManager) {
@@ -47,7 +48,12 @@ public class HsmPlugin implements BesuPlugin {
     serviceManager
         .getService(SecurityModuleService.class)
         .orElseThrow(() -> new IllegalStateException("SecurityModuleService service not available"))
-        .register(SECURITY_MODULE_NAME, () -> new Pkcs11SecurityModule(cliOptions));
+        .register(
+            SECURITY_MODULE_NAME,
+            () -> {
+              this.module = new Pkcs11SecurityModule(cliOptions);
+              return this.module;
+            });
   }
 
   @Override
@@ -58,5 +64,8 @@ public class HsmPlugin implements BesuPlugin {
   @Override
   public void stop() {
     LOG.debug("Stopping PKCS#11 HSM plugin ...");
+    if (module != null) {
+      module.removeProvider();
+    }
   }
 }

@@ -1,6 +1,13 @@
 #!/bin/bash
 set -e
 
+cleanup_tmpdir() {
+    if [ -n "${TMPDIR:-}" ] && [ -d "${TMPDIR}" ]; then
+        rm -rf "${TMPDIR}"
+    fi
+}
+trap cleanup_tmpdir EXIT
+
 # Read PIN from password file
 PIN=$(cat /etc/besu/config/pkcs11-hsm-password.txt | tr -d '[:space:]')
 TOKEN_LABEL="testtoken"
@@ -53,7 +60,6 @@ if ! pkcs11-tool --module /usr/lib/softhsm/libsofthsm2.so --login --pin "${PIN}"
         --write-object "${TMPDIR}/ec-cert.der" --type cert \
         --label "${KEY_LABEL}" --id 01
 
-    rm -rf "${TMPDIR}"
     echo "Key pair and certificate imported successfully."
 fi
 

@@ -23,6 +23,7 @@ import java.security.Provider;
 import java.security.Security;
 import java.security.cert.Certificate;
 import java.security.interfaces.ECPublicKey;
+import java.util.Arrays;
 import org.hyperledger.besu.plugin.services.securitymodule.SecurityModuleException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -64,12 +65,16 @@ class Pkcs11Provider {
 
   private KeyStore loadKeyStore(final Path passwordPath) {
     LOG.info("Loading PKCS#11 keystore ...");
-    final char[] password;
+    final byte[] passwordBytes;
     try {
-      password = Files.readString(passwordPath).trim().toCharArray();
+      passwordBytes = Files.readAllBytes(passwordPath);
     } catch (final IOException e) {
       throw new SecurityModuleException("Error reading password file: " + passwordPath, e);
     }
+
+    final char[] password =
+        new String(passwordBytes, java.nio.charset.StandardCharsets.UTF_8).trim().toCharArray();
+    Arrays.fill(passwordBytes, (byte) 0);
 
     try {
       final KeyStore keyStore = KeyStore.getInstance("PKCS11", provider);
@@ -77,6 +82,8 @@ class Pkcs11Provider {
       return keyStore;
     } catch (final Exception e) {
       throw new SecurityModuleException("Error loading PKCS#11 keystore", e);
+    } finally {
+      Arrays.fill(password, '\0');
     }
   }
 
@@ -85,7 +92,8 @@ class Pkcs11Provider {
     try {
       final java.security.Key key = keyStore.getKey(alias, new char[0]);
       if (!(key instanceof PrivateKey)) {
-        throw new SecurityModuleException("Loaded key is not a PrivateKey for alias: " + alias);
+        throw new SecurityModuleException(
+            "Key loaded for alias is not a PrivateKey. Alias: " + alias);
       }
       return (PrivateKey) key;
     } catch (final SecurityModuleException e) {
@@ -104,7 +112,8 @@ class Pkcs11Provider {
       }
       final java.security.PublicKey publicKey = certificate.getPublicKey();
       if (!(publicKey instanceof ECPublicKey)) {
-        throw new SecurityModuleException("Public key is not an ECPublicKey for alias: " + alias);
+        throw new SecurityModuleException(
+            "Public key loaded is not an ECPublicKey for alias: " + alias);
       }
       return (ECPublicKey) publicKey;
     } catch (final SecurityModuleException e) {
@@ -112,6 +121,10 @@ class Pkcs11Provider {
     } catch (final Exception e) {
       throw new SecurityModuleException("Error loading public key for alias: " + alias, e);
     }
+  }
+
+  void removeProvider() {
+    Security.removeProvider(provider.getName());
   }
 
   Provider getProvider() {

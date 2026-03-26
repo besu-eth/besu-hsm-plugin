@@ -29,6 +29,9 @@ final class Secp256k1Parameters {
 
   static {
     final X9ECParameters params = SECNamedCurves.getByName("secp256k1");
+    if (params == null) {
+      throw new IllegalStateException("secp256k1 curve parameters not available from BouncyCastle");
+    }
     final ECDomainParameters ecParams =
         new ECDomainParameters(params.getCurve(), params.getG(), params.getN(), params.getH());
 
@@ -37,6 +40,7 @@ final class Secp256k1Parameters {
             "secp256k1", ecParams.getCurve(), ecParams.getG(), ecParams.getN(), ecParams.getH());
 
     CURVE_ORDER = params.getN();
+    // Ethereum requires "low-S" signatures (EIP-2): S must be in the lower half of the curve order
     HALF_CURVE_ORDER = CURVE_ORDER.shiftRight(1);
   }
 

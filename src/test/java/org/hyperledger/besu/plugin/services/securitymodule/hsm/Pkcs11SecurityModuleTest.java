@@ -19,6 +19,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.nio.file.Path;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.PrivateKey;
@@ -26,11 +27,13 @@ import java.security.Provider;
 import java.security.Security;
 import java.security.interfaces.ECPublicKey;
 import java.security.spec.ECGenParameterSpec;
+import javax.crypto.KeyAgreement;
 import org.apache.tuweni.bytes.Bytes32;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.hyperledger.besu.plugin.services.securitymodule.SecurityModuleException;
 import org.hyperledger.besu.plugin.services.securitymodule.data.PublicKey;
 import org.hyperledger.besu.plugin.services.securitymodule.data.Signature;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -54,13 +57,18 @@ class Pkcs11SecurityModuleTest {
     ecPublicKey = (ECPublicKey) keyPair.getPublic();
   }
 
+  @AfterAll
+  static void removeProvider() {
+    Security.removeProvider(provider.getName());
+  }
+
   @BeforeEach
   void setUp() {
     module = new Pkcs11SecurityModule(provider, privateKey, ecPublicKey, "NONEWithECDSA", false);
   }
 
   @Test
-  void signReturnsValidSignature() {
+  void signReturnsValidSignature() throws Exception {
     final Bytes32 dataHash = Bytes32.random();
     final Signature signature = module.sign(dataHash);
 
@@ -70,6 +78,14 @@ class Pkcs11SecurityModuleTest {
     assertThat(signature.getR().signum()).isPositive();
     assertThat(signature.getS().signum()).isPositive();
     assertThat(signature.getS()).isLessThanOrEqualTo(Secp256k1Parameters.HALF_CURVE_ORDER);
+
+    // Verify signature using the public key
+    final java.security.Signature verifier =
+        java.security.Signature.getInstance("NONEWithECDSA", provider);
+    verifier.initVerify(ecPublicKey);
+    verifier.update(dataHash.toArray());
+    final byte[] derSig = SignatureUtil.toDer(signature.getR(), signature.getS());
+    assertThat(verifier.verify(derSig)).isTrue();
   }
 
   @Test
@@ -91,6 +107,13 @@ class Pkcs11SecurityModuleTest {
 
     assertThat(secret).isNotNull();
     assertThat(secret).isNotEqualTo(Bytes32.ZERO);
+
+    // Verify by computing the same ECDH from the other side
+    final KeyAgreement otherAgreement = KeyAgreement.getInstance("ECDH", provider);
+    otherAgreement.init(otherKeyPair.getPrivate());
+    otherAgreement.doPhase(ecPublicKey, true);
+    final Bytes32 expectedSecret = Bytes32.wrap(otherAgreement.generateSecret());
+    assertThat(secret).isEqualTo(expectedSecret);
   }
 
   @Test
@@ -104,7 +127,30 @@ class Pkcs11SecurityModuleTest {
   }
 
   @Test
-  void signProducesConsistentResults() {
+  void validateCliOptionsRejectsNullPasswordPath() {
+    final Pkcs11CliOptions options = mock(Pkcs11CliOptions.class);
+    when(options.getPkcs11ConfigPath()).thenReturn(Path.of("/tmp/config"));
+    when(options.getPkcs11PasswordPath()).thenReturn(null);
+
+    assertThatThrownBy(() -> new Pkcs11SecurityModule(options))
+        .isInstanceOf(SecurityModuleException.class)
+        .hasMessageContaining("password file path");
+  }
+
+  @Test
+  void validateCliOptionsRejectsNullKeyAlias() {
+    final Pkcs11CliOptions options = mock(Pkcs11CliOptions.class);
+    when(options.getPkcs11ConfigPath()).thenReturn(Path.of("/tmp/config"));
+    when(options.getPkcs11PasswordPath()).thenReturn(Path.of("/tmp/password"));
+    when(options.getPrivateKeyAlias()).thenReturn(null);
+
+    assertThatThrownBy(() -> new Pkcs11SecurityModule(options))
+        .isInstanceOf(SecurityModuleException.class)
+        .hasMessageContaining("key alias");
+  }
+
+  @Test
+  void signProducesConsistentResults() throws Exception {
     final Bytes32 dataHash = Bytes32.random();
     final Signature sig1 = module.sign(dataHash);
     final Signature sig2 = module.sign(dataHash);
@@ -113,5 +159,16 @@ class Pkcs11SecurityModuleTest {
     assertThat(sig2.getR().signum()).isPositive();
     assertThat(sig1.getS()).isLessThanOrEqualTo(Secp256k1Parameters.HALF_CURVE_ORDER);
     assertThat(sig2.getS()).isLessThanOrEqualTo(Secp256k1Parameters.HALF_CURVE_ORDER);
+
+    // Verify both signatures are valid for the same data
+    final java.security.Signature verifier =
+        java.security.Signature.getInstance("NONEWithECDSA", provider);
+    verifier.initVerify(ecPublicKey);
+    verifier.update(dataHash.toArray());
+    assertThat(verifier.verify(SignatureUtil.toDer(sig1.getR(), sig1.getS()))).isTrue();
+
+    verifier.initVerify(ecPublicKey);
+    verifier.update(dataHash.toArray());
+    assertThat(verifier.verify(SignatureUtil.toDer(sig2.getR(), sig2.getS()))).isTrue();
   }
 }
