@@ -36,6 +36,15 @@ class Pkcs11Provider {
   private final ECPublicKey ecPublicKey;
 
   Pkcs11Provider(final Path configPath, final Path passwordPath, final String keyAlias) {
+    if (configPath == null) {
+      throw new SecurityModuleException("PKCS#11 configuration file path must not be null");
+    }
+    if (passwordPath == null) {
+      throw new SecurityModuleException("PKCS#11 password file path must not be null");
+    }
+    if (keyAlias == null || keyAlias.isBlank()) {
+      throw new SecurityModuleException("PKCS#11 key alias must not be null or empty");
+    }
     this.provider = initializeProvider(configPath);
     final KeyStore keyStore = loadKeyStore(passwordPath);
     this.privateKey = loadPrivateKey(keyStore, keyAlias);

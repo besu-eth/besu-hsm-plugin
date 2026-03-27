@@ -150,7 +150,7 @@ class Pkcs11SecurityModuleTest {
   }
 
   @Test
-  void signProducesConsistentResults() throws Exception {
+  void multipleSignaturesAreAllValidAndCanonical() throws Exception {
     final Bytes32 dataHash = Bytes32.random();
     final Signature sig1 = module.sign(dataHash);
     final Signature sig2 = module.sign(dataHash);
