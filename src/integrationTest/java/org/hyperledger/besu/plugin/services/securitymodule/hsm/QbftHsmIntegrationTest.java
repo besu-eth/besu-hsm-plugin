@@ -29,6 +29,7 @@ import java.util.List;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.testcontainers.containers.ContainerState;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.Network;
@@ -68,6 +69,9 @@ class QbftHsmIntegrationTest {
       "unzip -o -j /tmp/besu-hsm-plugin.zip -d /opt/besu/plugins/";
   private static final int RPC_PORT = 8545;
   private static final int P2P_PORT = 30303;
+  private static final HttpClient HTTP_CLIENT = HttpClient.newHttpClient();
+
+  @TempDir private static Path tempDir;
 
   private static ImageFromDockerfile qbftImage;
   private static Network network;
@@ -84,13 +88,13 @@ class QbftHsmIntegrationTest {
             .withDockerfile(DOCKER_DIR.resolve("Dockerfile"));
 
     network = Network.newNetwork();
-    sharedDataDir = Files.createTempDirectory("qbft-hsm-data");
+    sharedDataDir = Files.createDirectory(tempDir.resolve("data"));
     tokenDirs = new ArrayList<>();
     publicKeys = new ArrayList<>();
 
     // Phase 1: Generate keys on each node's SoftHSM2
     for (int i = 0; i < NODE_COUNT; i++) {
-      final Path tokenDir = Files.createTempDirectory("qbft-hsm-tokens-" + i);
+      final Path tokenDir = Files.createDirectory(tempDir.resolve("tokens-" + i));
       tokenDirs.add(tokenDir);
       generateNodeKey(i, tokenDir);
     }
@@ -317,7 +321,6 @@ class QbftHsmIntegrationTest {
         String.format(
             "{\"jsonrpc\":\"2.0\",\"method\":\"%s\",\"params\":%s,\"id\":1}", method, params);
 
-    final HttpClient client = HttpClient.newHttpClient();
     final HttpRequest request =
         HttpRequest.newBuilder()
             .uri(URI.create("http://localhost:" + port))
@@ -326,6 +329,6 @@ class QbftHsmIntegrationTest {
             .timeout(Duration.ofSeconds(10))
             .build();
 
-    return client.send(request, HttpResponse.BodyHandlers.ofString()).body();
+    return HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString()).body();
   }
 }
