@@ -368,6 +368,24 @@ class QbftHsmIntegrationTest {
     if (network != null) {
       network.close();
     }
+    // Docker containers create files as root inside bind-mounted temp dirs.
+    // Fix permissions so JUnit @TempDir cleanup can delete them.
+    if (qbftImage != null && tempDir != null) {
+      try (GenericContainer<?> cleanup =
+          new GenericContainer<>(qbftImage)
+              .withFileSystemBind(tempDir.toString(), "/cleanup")
+              .withCreateContainerCmdModifier(
+                  cmd -> {
+                    cmd.withEntrypoint("/bin/sh", "-c");
+                    cmd.withCmd("chmod -R 777 /cleanup");
+                  })
+              .withStartupCheckStrategy(
+                  new OneShotStartupCheckStrategy().withTimeout(Duration.ofSeconds(30)))) {
+        cleanup.start();
+      } catch (final Exception e) {
+        // Best-effort cleanup; don't fail the test suite
+      }
+    }
   }
 
   private static long getBlockNumber(final GenericContainer<?> container)
