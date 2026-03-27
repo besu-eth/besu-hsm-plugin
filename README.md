@@ -106,8 +106,8 @@ prefix byte + x-coordinate) from the ECDH scalar multiplication, but the PKCS#11
 `CKM_ECDH1_DERIVE` mechanism only returns the x-coordinate — the y-parity needed for the
 compression prefix is discarded.
 
-**Impact:** HSM-backed validators must use static peering (`--static-nodes-file`) with discovery
-disabled (`--discovery-enabled=false`) rather than relying on DiscV5 peer discovery.
+**Impact:** HSM-backed validators must use DiscV4 (`--bootnodes`) or static peering
+(`--static-nodes-file`) for peer discovery rather than relying on DiscV5.
 
 **Why this can't be fixed with native PKCS#11 calls:** The limitation is in the PKCS#11 spec itself,
 not the Java wrapper. `CKM_ECDH1_DERIVE` with `CKD_NULL` returns only the x-coordinate per
