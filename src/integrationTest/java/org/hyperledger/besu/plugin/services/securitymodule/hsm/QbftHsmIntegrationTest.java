@@ -68,7 +68,7 @@ import org.web3j.utils.Numeric;
 class QbftHsmIntegrationTest {
 
   private static final int NODE_COUNT = 4;
-  private static final String BESU_QBFT_HSM_IMAGE_NAME = "besu-qbft-hsm-test";
+  private static final String BESU_QBFT_HSM_IMAGE_NAME = "besu-hsm-test";
   private static final Path DOCKER_DIR =
       Path.of(System.getProperty("user.dir"), "docker", "softhsm2");
   private static final Path DIST_ZIP =
@@ -88,7 +88,6 @@ class QbftHsmIntegrationTest {
   private static List<Path> tokenDirs;
   private static List<String> publicKeys;
   private static List<GenericContainer<?>> besuContainers;
-  private static List<ToStringConsumer> logConsumers;
 
   @BeforeAll
   static void setup() throws Exception {
@@ -125,7 +124,6 @@ class QbftHsmIntegrationTest {
     // Node-0 starts first as bootnode (no --bootnodes needed).
     // Nodes 1-3 start with --bootnodes pointing to node-0's IP.
     besuContainers = new ArrayList<>();
-    logConsumers = new ArrayList<>();
     startBootnode();
     final String bootnodeEnodeUrl = getBootnodeEnodeUrl();
     for (int i = 1; i < NODE_COUNT; i++) {
@@ -177,7 +175,6 @@ class QbftHsmIntegrationTest {
   /** Starts node-0 as the bootnode (no --bootnodes flag). */
   private static void startBootnode() {
     final ToStringConsumer logConsumer = new ToStringConsumer();
-    logConsumers.add(logConsumer);
 
     final GenericContainer<?> container =
         new GenericContainer<>(qbftImage)
@@ -223,7 +220,6 @@ class QbftHsmIntegrationTest {
   /** Starts a validator node with --bootnodes pointing to the bootnode. */
   private static void startValidatorNode(final int nodeIndex, final String bootnodeEnodeUrl) {
     final ToStringConsumer logConsumer = new ToStringConsumer();
-    logConsumers.add(logConsumer);
 
     final GenericContainer<?> container =
         new GenericContainer<>(qbftImage)
@@ -346,7 +342,7 @@ class QbftHsmIntegrationTest {
             .asText();
     assertThat(txHash).startsWith("0x");
 
-    // Wait for the transaction to be mined
+    // Wait for the transaction to be mined and verify the block contains it
     await()
         .atMost(Duration.ofSeconds(30))
         .pollInterval(Duration.ofSeconds(2))
@@ -357,6 +353,15 @@ class QbftHsmIntegrationTest {
                       besuContainers.get(0), "eth_getTransactionReceipt", "[\"" + txHash + "\"]");
               assertThat(receipt.isNull()).isFalse();
               assertThat(receipt.get("status").asText()).isEqualTo("0x1");
+
+              // Verify the block that mined this tx is non-empty
+              final String blockNumber = receipt.get("blockNumber").asText();
+              final JsonNode block =
+                  rpcResult(
+                      besuContainers.get(0),
+                      "eth_getBlockByNumber",
+                      "[\"" + blockNumber + "\", false]");
+              assertThat(block.get("transactions").size()).isGreaterThan(0);
             });
   }
 

@@ -166,7 +166,7 @@ Instructions for how to get started with developing on the Besu HSM Plugin codeb
 > has been merged but is not yet included in a Besu release. Once a Besu release containing this fix
 > is available, we need to:
 > 1. Update the Besu version in `build.gradle` (plugin dependency)
-> 2. Update the `BESU_VERSION` ARG in `docker/softhsm2/Dockerfile` to match the release tag
+> 2. Update the Besu image tag in the `FROM` line of `docker/softhsm2/Dockerfile` to match the release tag
 
 [Besu HSM Plugin Issues]: https://github.com/besu-eth/besu-hsm-plugin/issues
 [Besu channel on Discord]: https://discord.com/invite/hyperledger
