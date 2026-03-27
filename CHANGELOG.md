@@ -5,9 +5,11 @@
 ### Added
 - PKCS#11 SecurityModule implementation via SunPKCS11/JCE (`Pkcs11SecurityModule`, `Pkcs11Provider`)
 - Besu plugin (`HsmPlugin`) with CLI options: `--plugin-pkcs11-hsm-config-path`, `--plugin-pkcs11-hsm-password-path`, `--plugin-pkcs11-hsm-key-alias`
-- Docker-based integration tests using Testcontainers and SoftHSM2
-- Docker image setup for SoftHSM2 (`docker/softhsm/`) with auto token initialization and EC key import
+- Docker-based integration tests using Testcontainers and SoftHSM2 (`docker/softhsm2/`)
+- QBFT 4-node integration test with HSM-backed block signing, including value transfer verification
+- CI integration test job in GitHub Actions workflow
 - Placeholder Docker setups for YubiHSM and AWS CloudHSM
+- Documentation for DiscV5 limitation with PKCS#11 HSM
 
 ## 0.0.0
 
