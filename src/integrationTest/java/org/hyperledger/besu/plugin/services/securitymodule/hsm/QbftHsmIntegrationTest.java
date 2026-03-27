@@ -267,6 +267,31 @@ class QbftHsmIntegrationTest {
   }
 
   @Test
+  void besuHelpShowsPluginCliOptions() {
+    final ToStringConsumer toStringConsumer = new ToStringConsumer();
+
+    try (GenericContainer<?> container =
+        new GenericContainer<>(qbftImage)
+            .withCopyFileToContainer(
+                MountableFile.forHostPath(DIST_ZIP), "/tmp/besu-hsm-plugin.zip")
+            .withCreateContainerCmdModifier(
+                cmd -> {
+                  cmd.withEntrypoint("/bin/sh", "-c");
+                  cmd.withCmd(INSTALL_PLUGIN_CMD + " && /opt/besu/bin/besu --help");
+                })
+            .withStartupCheckStrategy(
+                new OneShotStartupCheckStrategy().withTimeout(Duration.ofMinutes(1)))
+            .withLogConsumer(toStringConsumer)) {
+      container.start();
+
+      final String logs = toStringConsumer.toUtf8String();
+      assertThat(logs).contains("--plugin-pkcs11-hsm-config-path");
+      assertThat(logs).contains("--plugin-pkcs11-hsm-password-path");
+      assertThat(logs).contains("--plugin-pkcs11-hsm-key-alias");
+    }
+  }
+
+  @Test
   void qbftNetworkProducesBlocks() {
     await()
         .atMost(Duration.ofSeconds(60))
