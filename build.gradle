@@ -107,10 +107,6 @@ tasks.register('integrationTest', Test) {
   classpath = sourceSets.integrationTest.runtimeClasspath
   dependsOn distZip
   useJUnitPlatform()
-  testLogging {
-    showStandardStreams = true
-    events "passed", "skipped", "failed"
-  }
   outputs.upToDateWhen { false } // Always re-run; Docker container state is not tracked by Gradle
 }
 
