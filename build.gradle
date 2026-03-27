@@ -16,8 +16,28 @@
 plugins {
   // Apply the java-library plugin for API and implementation separation.
   id 'java-library'
+  alias libs.plugins.git.versioning
   alias libs.plugins.spotless
   alias libs.plugins.besu.plugin.distribution
+}
+
+version = "0.0.0-SNAPSHOT"
+
+gitVersioning.apply {
+  refs {
+    tag("\\d+\\.\\d+\\.\\d+") {
+      version = "\${ref}"
+    }
+    branch("main") {
+      version = "\${ref}-SNAPSHOT"
+    }
+    branch(".+") {
+      version = "\${ref}-SNAPSHOT"
+    }
+  }
+  rev {
+    version = "\${commit.short}-SNAPSHOT"
+  }
 }
 
 repositories {
@@ -43,6 +63,15 @@ dependencies {
 java {
   toolchain {
     languageVersion = JavaLanguageVersion.of(21)
+  }
+}
+
+tasks.named('jar') {
+  manifest {
+    attributes(
+      'Implementation-Title': project.name,
+      'Implementation-Version': project.version,
+      )
   }
 }
 

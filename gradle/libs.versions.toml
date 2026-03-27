@@ -3,6 +3,7 @@
 [versions]
 besu = "26.2.0"
 besu-plugin-distribution = "0.1.6"
+git-versioning = "6.4.4"
 spotless = "8.3.0"
 junit-jupiter = "5.13.4"
 assertj = "3.27.7"
@@ -16,5 +17,6 @@ testcontainers = { module = "org.testcontainers:testcontainers", version.ref = "
 testcontainers-junit-jupiter = { module = "org.testcontainers:testcontainers-junit-jupiter", version.ref = "testcontainers" }
 
 [plugins]
+git-versioning = { id = "me.qoomon.git-versioning", version.ref = "git-versioning" }
 spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
 besu-plugin-distribution = { id = "net.consensys.besu-plugin-distribution", version.ref = "besu-plugin-distribution" }

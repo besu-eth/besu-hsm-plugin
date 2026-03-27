@@ -71,8 +71,8 @@ class QbftHsmIntegrationTest {
   private static final String BESU_QBFT_HSM_IMAGE_NAME = "besu-hsm-test";
   private static final Path DOCKER_DIR =
       Path.of(System.getProperty("user.dir"), "docker", "softhsm2");
-  private static final Path DIST_ZIP =
-      Path.of(System.getProperty("user.dir"), "build", "distributions", "besu-hsm-plugin.zip");
+  private static final Path DIST_DIR =
+      Path.of(System.getProperty("user.dir"), "build", "distributions");
   private static final String INSTALL_PLUGIN_CMD =
       "unzip -o -j /tmp/besu-hsm-plugin.zip -d /opt/besu/plugins/";
   private static final int RPC_PORT = 8545;
@@ -81,6 +81,8 @@ class QbftHsmIntegrationTest {
   private static final ObjectMapper MAPPER = new ObjectMapper();
 
   @TempDir private static Path tempDir;
+
+  private static final Path DIST_ZIP = findDistZip();
 
   private static ImageFromDockerfile qbftImage;
   private static Network network;
@@ -445,5 +447,17 @@ class QbftHsmIntegrationTest {
         .withFailMessage("RPC error for %s: %s", method, response)
         .isTrue();
     return json.get("result");
+  }
+
+  private static Path findDistZip() {
+    try (var stream = Files.newDirectoryStream(DIST_DIR, "besu-hsm-plugin*.zip")) {
+      for (final Path path : stream) {
+        return path;
+      }
+    } catch (final IOException e) {
+      // Fall through
+    }
+    throw new IllegalStateException(
+        "Plugin distribution zip not found in " + DIST_DIR + ". Run ./gradlew distZip first.");
   }
 }
