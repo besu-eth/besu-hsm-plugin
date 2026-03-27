@@ -43,7 +43,12 @@ public class Pkcs11SecurityModule implements SecurityModule {
   public Pkcs11SecurityModule(final Pkcs11CliOptions cliOptions) {
     LOG.debug("Creating Pkcs11SecurityModule ...");
     validateCliOptions(cliOptions);
-    final EcCurveParameters curveParams = new EcCurveParameters(cliOptions.getEcCurve());
+    final EcCurveParameters curveParams;
+    try {
+      curveParams = new EcCurveParameters(cliOptions.getEcCurve());
+    } catch (final IllegalArgumentException e) {
+      throw new SecurityModuleException("Unsupported EC curve: " + cliOptions.getEcCurve(), e);
+    }
     LOG.info("Using EC curve: {}", curveParams.getCurveName());
     this.signatureUtil = new SignatureUtil(curveParams);
     this.pkcs11Provider =

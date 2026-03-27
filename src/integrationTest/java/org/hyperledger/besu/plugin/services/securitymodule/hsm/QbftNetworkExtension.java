@@ -124,7 +124,7 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
       network.close();
     }
     // Docker containers create files as root inside bind-mounted temp dirs.
-    // Fix permissions so the temp directory can be deleted.
+    // Fix permissions then delete the temp directory.
     if (image != null && tempDir != null) {
       try (GenericContainer<?> cleanup =
           new GenericContainer<>(image)
@@ -138,8 +138,17 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
                   new OneShotStartupCheckStrategy().withTimeout(Duration.ofSeconds(30)))) {
         cleanup.start();
       } catch (final Exception e) {
-        // Best-effort cleanup
+        // Best-effort permission fix
       }
+      deleteDirectory(tempDir);
+    }
+  }
+
+  private static void deleteDirectory(final Path dir) {
+    try (var paths = Files.walk(dir)) {
+      paths.sorted(java.util.Comparator.reverseOrder()).forEach(p -> p.toFile().delete());
+    } catch (final IOException e) {
+      // Best-effort cleanup
     }
   }
 
