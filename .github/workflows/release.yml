@@ -24,16 +24,6 @@ jobs:
     - name: Build distribution zip
       run: ./gradlew distZip
 
-    - name: Extract changelog for this release
-      run: |
-        # Extract content between the first ## heading and the second ## heading
-        awk '/^## /{if(++c==2)exit}c==1&&!/^## /' CHANGELOG.md > /tmp/release-notes.md
-
-    - name: Update release notes from changelog
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: gh release edit "${{ github.event.release.tag_name }}" --notes-file /tmp/release-notes.md
-
     - name: Upload release assets
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
