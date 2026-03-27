@@ -15,6 +15,7 @@
 package org.hyperledger.besu.plugin.services.securitymodule.hsm;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 import java.io.IOException;
 import java.net.URI;
@@ -262,21 +263,15 @@ class QbftHsmIntegrationTest {
   }
 
   @Test
-  void qbftNetworkProducesBlocks() throws Exception {
-    // Poll for block production — QBFT may need time to complete its first round
-    long blockNumber = 0;
-    for (int attempt = 0; attempt < 30; attempt++) {
-      Thread.sleep(2_000);
-      final String response = jsonRpcCall(besuContainers.get(0), "eth_blockNumber", "[]");
-      assertThat(response).contains("result");
-
-      final String blockHex = response.replaceAll(".*\"result\":\"(0x[0-9a-fA-F]+)\".*", "$1");
-      blockNumber = Long.parseLong(blockHex.substring(2), 16);
-      if (blockNumber > 0) {
-        break;
-      }
-    }
-    assertThat(blockNumber).isGreaterThan(0);
+  void qbftNetworkProducesBlocks() {
+    await()
+        .atMost(Duration.ofSeconds(60))
+        .pollInterval(Duration.ofSeconds(2))
+        .untilAsserted(
+            () -> {
+              final long blockNumber = getBlockNumber(besuContainers.get(0));
+              assertThat(blockNumber).isGreaterThan(0);
+            });
   }
 
   @Test
@@ -311,6 +306,13 @@ class QbftHsmIntegrationTest {
     if (network != null) {
       network.close();
     }
+  }
+
+  private static long getBlockNumber(final GenericContainer<?> container)
+      throws IOException, InterruptedException {
+    final String response = jsonRpcCall(container, "eth_blockNumber", "[]");
+    final String blockHex = response.replaceAll(".*\"result\":\"(0x[0-9a-fA-F]+)\".*", "$1");
+    return Long.parseLong(blockHex.substring(2), 16);
   }
 
   private static String jsonRpcCall(
