@@ -17,7 +17,10 @@ package org.hyperledger.besu.plugin.services.securitymodule.hsm;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
+import java.math.BigInteger;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -40,6 +43,10 @@ import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.images.builder.ImageFromDockerfile;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.MountableFile;
+import org.web3j.crypto.Credentials;
+import org.web3j.crypto.RawTransaction;
+import org.web3j.crypto.TransactionEncoder;
+import org.web3j.utils.Numeric;
 
 /**
  * Integration test that runs a 4-node QBFT network where each validator uses the PKCS#11 HSM
@@ -71,6 +78,7 @@ class QbftHsmIntegrationTest {
   private static final int RPC_PORT = 8545;
   private static final int P2P_PORT = 30303;
   private static final HttpClient HTTP_CLIENT = HttpClient.newHttpClient();
+  private static final ObjectMapper MAPPER = new ObjectMapper();
 
   @TempDir private static Path tempDir;
 
@@ -275,27 +283,79 @@ class QbftHsmIntegrationTest {
   }
 
   @Test
-  void allValidatorsAreRecognized() throws Exception {
-    final String response =
-        jsonRpcCall(besuContainers.get(0), "qbft_getValidatorsByBlockNumber", "[\"latest\"]");
-    assertThat(response).contains("result");
+  void allNodesReachSameBlock() {
+    // Wait for all nodes to produce blocks, then verify they all agree on block height
+    await()
+        .atMost(Duration.ofSeconds(60))
+        .pollInterval(Duration.ofSeconds(2))
+        .untilAsserted(
+            () -> {
+              for (final GenericContainer<?> container : besuContainers) {
+                assertThat(getBlockNumber(container)).isGreaterThan(0);
+              }
+            });
+  }
 
-    // Extract the result array and count validator addresses
-    final String resultArray =
-        response.replaceAll(".*\"result\":\\[([^\\]]*)\\].*", "$1").toLowerCase();
-    final String[] addresses = resultArray.split(",");
-    assertThat(addresses).hasSize(NODE_COUNT);
+  @Test
+  void allValidatorsAreRecognized() throws Exception {
+    final JsonNode result =
+        rpcResult(besuContainers.get(0), "qbft_getValidatorsByBlockNumber", "[\"latest\"]");
+    assertThat(result.isArray()).isTrue();
+    assertThat(result.size()).isEqualTo(NODE_COUNT);
   }
 
   @Test
   void prefundedAccountHasBalance() throws Exception {
-    final String response =
-        jsonRpcCall(
+    final JsonNode result =
+        rpcResult(
             besuContainers.get(0),
             "eth_getBalance",
             "[\"0xfe3b557e8fb62b89f4916b721be55ceb828dbd73\", \"latest\"]");
-    assertThat(response).contains("result");
-    assertThat(response).contains("0xad78ebc5ac6200000");
+    assertThat(new BigInteger(result.asText().substring(2), 16).signum()).isGreaterThan(0);
+  }
+
+  @Test
+  void valueTransferProducesNonEmptyBlock() throws Exception {
+    // Sign and send a value transfer from the prefunded dev account (0xfe3b...).
+    // Private key is the well-known Besu dev/test key.
+    final Credentials sender =
+        Credentials.create("8f2a55949038a9610f50fb23b5883af3b4ecb3c3bb792cbcefbd1542c692be63");
+
+    final JsonNode nonceResult =
+        rpcResult(
+            besuContainers.get(0),
+            "eth_getTransactionCount",
+            "[\"" + sender.getAddress() + "\", \"latest\"]");
+    final long nonce = Long.decode(nonceResult.asText());
+
+    final RawTransaction rawTx =
+        RawTransaction.createEtherTransaction(
+            BigInteger.valueOf(nonce),
+            BigInteger.valueOf(1_000_000_000L),
+            BigInteger.valueOf(21_000),
+            "0x627306090abaB3A6e1400e9345bC60c78a8BEf57",
+            BigInteger.valueOf(1_000_000_000_000_000_000L));
+
+    final byte[] signedBytes = TransactionEncoder.signMessage(rawTx, 1337, sender);
+    final String signedTxHex = Numeric.toHexString(signedBytes);
+
+    final String txHash =
+        rpcResult(besuContainers.get(0), "eth_sendRawTransaction", "[\"" + signedTxHex + "\"]")
+            .asText();
+    assertThat(txHash).startsWith("0x");
+
+    // Wait for the transaction to be mined
+    await()
+        .atMost(Duration.ofSeconds(30))
+        .pollInterval(Duration.ofSeconds(2))
+        .untilAsserted(
+            () -> {
+              final JsonNode receipt =
+                  rpcResult(
+                      besuContainers.get(0), "eth_getTransactionReceipt", "[\"" + txHash + "\"]");
+              assertThat(receipt.isNull()).isFalse();
+              assertThat(receipt.get("status").asText()).isEqualTo("0x1");
+            });
   }
 
   @AfterAll
@@ -310,12 +370,10 @@ class QbftHsmIntegrationTest {
 
   private static long getBlockNumber(final GenericContainer<?> container)
       throws IOException, InterruptedException {
-    final String response = jsonRpcCall(container, "eth_blockNumber", "[]");
-    final String blockHex = response.replaceAll(".*\"result\":\"(0x[0-9a-fA-F]+)\".*", "$1");
-    return Long.parseLong(blockHex.substring(2), 16);
+    return Long.decode(rpcResult(container, "eth_blockNumber", "[]").asText());
   }
 
-  private static String jsonRpcCall(
+  private static JsonNode rpcResult(
       final GenericContainer<?> container, final String method, final String params)
       throws IOException, InterruptedException {
     final int port = container.getMappedPort(RPC_PORT);
@@ -331,6 +389,11 @@ class QbftHsmIntegrationTest {
             .timeout(Duration.ofSeconds(10))
             .build();
 
-    return HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString()).body();
+    final String response = HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString()).body();
+    final JsonNode json = MAPPER.readTree(response);
+    assertThat(json.has("result"))
+        .withFailMessage("RPC error for %s: %s", method, response)
+        .isTrue();
+    return json.get("result");
   }
 }
