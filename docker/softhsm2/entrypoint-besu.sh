@@ -28,4 +28,4 @@ fi
 chown -R besu:besu /var/lib/tokens /data
 
 echo "Starting Besu ..."
-exec su -s /bin/bash besu -c "/opt/besu/bin/besu $*"
+exec su -s /bin/bash besu -- /opt/besu/bin/besu "$@"
