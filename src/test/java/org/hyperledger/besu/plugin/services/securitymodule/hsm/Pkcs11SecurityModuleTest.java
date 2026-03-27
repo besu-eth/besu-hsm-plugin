@@ -237,4 +237,24 @@ class Pkcs11SecurityModuleTest {
         .isInstanceOf(SecurityModuleException.class)
         .hasMessageContaining("key alias");
   }
+
+  @Test
+  void rejectsCurveMismatchBetweenKeyAndConfig() throws Exception {
+    // Generate a secp256k1 key but configure with secp256r1 curve params
+    final KeyPairGenerator kpg = KeyPairGenerator.getInstance("EC", provider);
+    kpg.initialize(new ECGenParameterSpec("secp256k1"));
+    final KeyPair keyPair = kpg.generateKeyPair();
+
+    assertThatThrownBy(
+            () ->
+                new Pkcs11SecurityModule(
+                    provider,
+                    keyPair.getPrivate(),
+                    (ECPublicKey) keyPair.getPublic(),
+                    "NONEWithECDSA",
+                    false,
+                    new EcCurveParameters("secp256r1")))
+        .isInstanceOf(SecurityModuleException.class)
+        .hasMessageContaining("does not match configured curve");
+  }
 }

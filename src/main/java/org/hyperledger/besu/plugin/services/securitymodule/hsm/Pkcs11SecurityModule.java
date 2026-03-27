@@ -54,6 +54,7 @@ public class Pkcs11SecurityModule implements SecurityModule {
     this.provider = pkcs11Provider.getProvider();
     this.privateKey = pkcs11Provider.getPrivateKey();
     final ECPublicKey ecPublicKey = pkcs11Provider.getEcPublicKey();
+    validatePublicKeyCurve(ecPublicKey, curveParams);
     this.publicKey = ecPublicKey::getW;
     this.useP1363 = probeP1363Support();
     this.signatureAlgorithm = useP1363 ? "NONEwithECDSAinP1363Format" : "NONEWithECDSA";
@@ -71,6 +72,7 @@ public class Pkcs11SecurityModule implements SecurityModule {
     this.pkcs11Provider = null;
     this.provider = provider;
     this.privateKey = privateKey;
+    validatePublicKeyCurve(ecPublicKey, curveParams);
     this.publicKey = ecPublicKey::getW;
     this.signatureAlgorithm = signatureAlgorithm;
     this.useP1363 = useP1363;
@@ -86,6 +88,17 @@ public class Pkcs11SecurityModule implements SecurityModule {
     }
     if (cliOptions.getPrivateKeyAlias() == null) {
       throw new SecurityModuleException("PKCS#11 private key alias is not provided");
+    }
+  }
+
+  private static void validatePublicKeyCurve(
+      final ECPublicKey ecPublicKey, final EcCurveParameters expectedCurve) {
+    final java.security.spec.ECParameterSpec keyParams = ecPublicKey.getParams();
+    if (!keyParams.getOrder().equals(expectedCurve.getCurveOrder())) {
+      throw new SecurityModuleException(
+          "HSM public key curve does not match configured curve '"
+              + expectedCurve.getCurveName()
+              + "'. Check that the key on the HSM was generated with the correct curve.");
     }
   }
 
