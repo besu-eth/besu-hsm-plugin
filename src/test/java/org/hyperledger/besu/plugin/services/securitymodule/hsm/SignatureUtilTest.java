@@ -118,7 +118,7 @@ class SignatureUtilTest {
     final byte[] der = buildDerSignature(BigInteger.ZERO, KNOWN_S);
     assertThatThrownBy(() -> SignatureUtil.extractRAndS(der, false))
         .isInstanceOf(SecurityModuleException.class)
-        .hasMessageContaining("R is out of range");
+        .hasMessageContaining("non-positive");
   }
 
   @Test

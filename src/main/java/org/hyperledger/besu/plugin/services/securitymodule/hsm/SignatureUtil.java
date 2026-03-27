@@ -58,12 +58,24 @@ final class SignatureUtil {
 
   private static Signature extractRAndSFromDER(final byte[] der) {
     try (final ASN1InputStream asn1InputStream = new ASN1InputStream(der)) {
-      final DLSequence seq = (DLSequence) asn1InputStream.readObject();
-      if (seq == null) {
-        throw new SecurityModuleException("Unexpected end of ASN.1 stream");
+      if (!(asn1InputStream.readObject() instanceof final DLSequence seq)) {
+        throw new SecurityModuleException("DER signature is not a valid ASN.1 SEQUENCE");
       }
-      final BigInteger r = ((ASN1Integer) seq.getObjectAt(0)).getPositiveValue();
-      final BigInteger s = ((ASN1Integer) seq.getObjectAt(1)).getPositiveValue();
+      if (seq.size() != 2) {
+        throw new SecurityModuleException("DER signature must contain exactly 2 integers");
+      }
+      if (!(seq.getObjectAt(0) instanceof final ASN1Integer rInt)
+          || !(seq.getObjectAt(1) instanceof final ASN1Integer sInt)) {
+        throw new SecurityModuleException("DER signature SEQUENCE elements must be INTEGERs");
+      }
+      final BigInteger r = rInt.getValue();
+      final BigInteger s = sInt.getValue();
+      if (r.signum() <= 0 || s.signum() <= 0) {
+        throw new SecurityModuleException("Invalid DER signature: R or S is non-positive");
+      }
+      if (asn1InputStream.readObject() != null) {
+        throw new SecurityModuleException("Trailing data found after DER signature SEQUENCE");
+      }
       return canonicalize(r, s);
     } catch (final SecurityModuleException e) {
       throw e;
@@ -95,7 +107,7 @@ final class SignatureUtil {
       final ByteArrayOutputStream baos = new ByteArrayOutputStream();
       final ASN1OutputStream asnOs = ASN1OutputStream.create(baos);
       asnOs.writeObject(new DERSequence(v));
-      asnOs.flush();
+      asnOs.close();
       return baos.toByteArray();
     } catch (final Exception e) {
       throw new SecurityModuleException("Error encoding signature to DER", e);
