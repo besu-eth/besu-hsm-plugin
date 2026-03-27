@@ -96,6 +96,26 @@ does not require certificates for key access, but Java's `KeyStore` abstraction 
 `PrivateKeyEntry` objects which always include a certificate chain. Without a certificate, `KeyStore.getKey()`
 will not return the private key at all.
 
+## Known Limitations
+
+### DiscV5 (Discovery v5) Not Supported
+
+The PKCS#11 HSM plugin does not support the `calculateECDHKeyAgreementCompressed` method required
+by Besu's DiscV5 discovery protocol. This method needs the full compressed EC point (SEC1 format:
+prefix byte + x-coordinate) from the ECDH scalar multiplication, but the PKCS#11 standard's
+`CKM_ECDH1_DERIVE` mechanism only returns the x-coordinate — the y-parity needed for the
+compression prefix is discarded.
+
+**Impact:** HSM-backed validators must use static peering (`--static-nodes-file`) with discovery
+disabled (`--discovery-enabled=false`) rather than relying on DiscV5 peer discovery.
+
+**Why this can't be fixed with native PKCS#11 calls:** The limitation is in the PKCS#11 spec itself,
+not the Java wrapper. `CKM_ECDH1_DERIVE` with `CKD_NULL` returns only the x-coordinate per
+ANSI X9.63. The derived object is a `CKO_SECRET_KEY` (no `CKA_EC_POINT` attribute), and requesting
+a larger `CKA_VALUE_LEN` doesn't help — the ECDH primitive only produces 32 bytes. This is
+confirmed across SoftHSM2, AWS CloudHSM, YubiHSM2, and Thales Luna. Using Java's FFM API to call
+`C_DeriveKey` directly would yield the same x-only result.
+
 ## Useful Links
 
 * [Besu User Documentation](https://besu.hyperledger.org)
@@ -134,8 +154,19 @@ Instructions for how to get started with developing on the Besu HSM Plugin codeb
 ### Running Tests
 
 ```bash
+# Unit tests
 ./gradlew test
+
+# Integration tests (requires Docker)
+./gradlew integrationTest
 ```
+
+> **Note:** Integration tests currently run against the `hyperledger/besu:develop` Docker image.
+> This is because the [besu-native-ec static OpenSSL fix](https://github.com/besu-eth/besu/pull/10096)
+> has been merged but is not yet included in a Besu release. Once a Besu release containing this fix
+> is available, we need to:
+> 1. Update the Besu version in `build.gradle` (plugin dependency)
+> 2. Update the `BESU_VERSION` ARG in `docker/softhsm2/Dockerfile` to match the release tag
 
 [Besu HSM Plugin Issues]: https://github.com/besu-eth/besu-hsm-plugin/issues
 [Besu channel on Discord]: https://discord.com/invite/hyperledger
