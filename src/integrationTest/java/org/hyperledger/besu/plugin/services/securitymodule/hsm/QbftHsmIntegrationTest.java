@@ -284,14 +284,16 @@ class QbftHsmIntegrationTest {
 
   @Test
   void allNodesReachSameBlock() {
-    // Wait for all nodes to produce blocks, then verify they all agree on block height
+    // Wait for all nodes to produce blocks and agree on the same block height
     await()
         .atMost(Duration.ofSeconds(60))
         .pollInterval(Duration.ofSeconds(2))
         .untilAsserted(
             () -> {
-              for (final GenericContainer<?> container : besuContainers) {
-                assertThat(getBlockNumber(container)).isGreaterThan(0);
+              final long expected = getBlockNumber(besuContainers.get(0));
+              assertThat(expected).isGreaterThan(0);
+              for (int i = 1; i < besuContainers.size(); i++) {
+                assertThat(getBlockNumber(besuContainers.get(i))).isEqualTo(expected);
               }
             });
   }
