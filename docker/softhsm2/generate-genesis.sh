@@ -46,6 +46,7 @@ cat > "${TMPDIR}/qbftConfigFile.json" <<EOF
       "chainId": 1337,
       "berlinBlock": 0,
       "londonBlock": 0,
+      "shanghaiTime": 0,
       "qbft": {
         "blockperiodseconds": 2,
         "epochlength": 30000,
