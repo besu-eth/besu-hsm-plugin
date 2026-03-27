@@ -16,7 +16,7 @@ RUN apt-get update && \
 RUN mkdir -p /opt/besu/plugins
 
 COPY config/pkcs11-yubihsm.cfg /etc/besu/config/pkcs11-yubihsm.cfg
-COPY config/pkcs11-hsm-password.txt /etc/besu/config/pkcs11-hsm-password.txt
+COPY config/pkcs11-hsm-password.test.txt /etc/besu/config/pkcs11-hsm-password.txt
 COPY config/besu-dev.toml /etc/besu/config/besu-dev.toml
 
 USER besu

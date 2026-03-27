@@ -20,7 +20,7 @@ RUN mkdir -p /var/lib/tokens /opt/besu/plugins && \
 # Copy configuration files
 COPY config/softhsm2.conf /etc/softhsm2.conf
 COPY config/pkcs11-softhsm.cfg /etc/besu/config/pkcs11-softhsm.cfg
-COPY config/pkcs11-hsm-password.txt /etc/besu/config/pkcs11-hsm-password.txt
+COPY config/pkcs11-hsm-password.test.txt /etc/besu/config/pkcs11-hsm-password.txt
 
 ENV SOFTHSM2_CONF=/etc/softhsm2.conf
 

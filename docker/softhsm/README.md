@@ -74,7 +74,7 @@ docker run --rm -e EC_CURVE=prime256v1 \
 | File | Path in container | Description |
 |------|-------------------|-------------|
 | `config/pkcs11-softhsm.cfg` | `/etc/besu/config/pkcs11-softhsm.cfg` | SunPKCS11 provider configuration |
-| `config/pkcs11-hsm-password.txt` | `/etc/besu/config/pkcs11-hsm-password.txt` | Token PIN (`1234`) |
+| `config/pkcs11-hsm-password.test.txt` | `/etc/besu/config/pkcs11-hsm-password.txt` | Test token PIN (`1234`) |
 | `config/softhsm2.conf` | `/etc/softhsm2.conf` | SoftHSM2 configuration (token dir: `/var/lib/tokens`) |
 
 ## Automated testing
