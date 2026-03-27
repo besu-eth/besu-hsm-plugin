@@ -38,10 +38,19 @@ public class Pkcs11SecurityModule implements SecurityModule {
   private final PublicKey publicKey;
   private final String signatureAlgorithm;
   private final boolean useP1363;
+  private final SignatureUtil signatureUtil;
 
   public Pkcs11SecurityModule(final Pkcs11CliOptions cliOptions) {
     LOG.debug("Creating Pkcs11SecurityModule ...");
     validateCliOptions(cliOptions);
+    final EcCurveParameters curveParams;
+    try {
+      curveParams = new EcCurveParameters(cliOptions.getEcCurve());
+    } catch (final IllegalArgumentException e) {
+      throw new SecurityModuleException("Unsupported EC curve: " + cliOptions.getEcCurve(), e);
+    }
+    LOG.info("Using EC curve: {}", curveParams.getCurveName());
+    this.signatureUtil = new SignatureUtil(curveParams);
     this.pkcs11Provider =
         new Pkcs11Provider(
             cliOptions.getPkcs11ConfigPath(),
@@ -50,6 +59,7 @@ public class Pkcs11SecurityModule implements SecurityModule {
     this.provider = pkcs11Provider.getProvider();
     this.privateKey = pkcs11Provider.getPrivateKey();
     final ECPublicKey ecPublicKey = pkcs11Provider.getEcPublicKey();
+    validatePublicKeyCurve(ecPublicKey, curveParams);
     this.publicKey = ecPublicKey::getW;
     this.useP1363 = probeP1363Support();
     this.signatureAlgorithm = useP1363 ? "NONEwithECDSAinP1363Format" : "NONEWithECDSA";
@@ -62,13 +72,16 @@ public class Pkcs11SecurityModule implements SecurityModule {
       final PrivateKey privateKey,
       final ECPublicKey ecPublicKey,
       final String signatureAlgorithm,
-      final boolean useP1363) {
+      final boolean useP1363,
+      final EcCurveParameters curveParams) {
     this.pkcs11Provider = null;
     this.provider = provider;
     this.privateKey = privateKey;
+    validatePublicKeyCurve(ecPublicKey, curveParams);
     this.publicKey = ecPublicKey::getW;
     this.signatureAlgorithm = signatureAlgorithm;
     this.useP1363 = useP1363;
+    this.signatureUtil = new SignatureUtil(curveParams);
   }
 
   private static void validateCliOptions(final Pkcs11CliOptions cliOptions) {
@@ -80,6 +93,17 @@ public class Pkcs11SecurityModule implements SecurityModule {
     }
     if (cliOptions.getPrivateKeyAlias() == null) {
       throw new SecurityModuleException("PKCS#11 private key alias is not provided");
+    }
+  }
+
+  private static void validatePublicKeyCurve(
+      final ECPublicKey ecPublicKey, final EcCurveParameters expectedCurve) {
+    final java.security.spec.ECParameterSpec keyParams = ecPublicKey.getParams();
+    if (!keyParams.getOrder().equals(expectedCurve.getCurveOrder())) {
+      throw new SecurityModuleException(
+          "HSM public key curve does not match configured curve '"
+              + expectedCurve.getCurveName()
+              + "'. Check that the key on the HSM was generated with the correct curve.");
     }
   }
 
@@ -102,7 +126,7 @@ public class Pkcs11SecurityModule implements SecurityModule {
       signature.initSign(privateKey);
       signature.update(dataHash.toArray());
       final byte[] sigBytes = signature.sign();
-      return SignatureUtil.extractRAndS(sigBytes, useP1363);
+      return signatureUtil.extractRAndS(sigBytes, useP1363);
     } catch (final SecurityModuleException e) {
       throw e;
     } catch (final Exception e) {
@@ -120,7 +144,7 @@ public class Pkcs11SecurityModule implements SecurityModule {
       throws SecurityModuleException {
     LOG.debug("Calculating ECDH key agreement ...");
     final java.security.PublicKey theirPublicKey =
-        SignatureUtil.ecPointToJcePublicKey(partyKey.getW(), provider);
+        signatureUtil.ecPointToJcePublicKey(partyKey.getW(), provider);
     try {
       final KeyAgreement keyAgreement = KeyAgreement.getInstance(KEY_AGREEMENT_ALGORITHM, provider);
       keyAgreement.init(privateKey);

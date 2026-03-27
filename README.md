@@ -96,6 +96,23 @@ does not require certificates for key access, but Java's `KeyStore` abstraction 
 `PrivateKeyEntry` objects which always include a certificate chain. Without a certificate, `KeyStore.getKey()`
 will not return the private key at all.
 
+## Experimental: secp256r1 Curve Support
+
+The plugin supports the secp256r1 (NIST P-256) elliptic curve as an alternative to the default
+secp256k1. This is controlled by the `--plugin-pkcs11-hsm-ec-curve` CLI option:
+
+```shell
+--plugin-pkcs11-hsm-ec-curve=secp256r1
+```
+
+Besu itself must also be configured to use secp256r1 via the `ecCurve` field in the genesis file.
+See the [Besu documentation on alternative elliptic curves](https://besu.hyperledger.org/private-networks/how-to/configure/curves)
+for details.
+
+> **Note:** Alternative elliptic curve support in Besu is experimental. The secp256r1 curve has been
+> tested with SoftHSM2 in a 4-node QBFT network. When generating HSM keys for secp256r1, pass
+> `EC_CURVE=secp256r1` to the Docker setup scripts (e.g. `entrypoint-setup.sh`).
+
 ## Known Limitations
 
 ### DiscV5 (Discovery v5) Not Supported

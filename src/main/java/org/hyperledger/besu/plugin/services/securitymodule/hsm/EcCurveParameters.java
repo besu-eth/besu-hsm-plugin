@@ -16,33 +16,48 @@ package org.hyperledger.besu.plugin.services.securitymodule.hsm;
 
 import java.math.BigInteger;
 import java.security.spec.ECParameterSpec;
-import org.bouncycastle.asn1.sec.SECNamedCurves;
+import org.bouncycastle.asn1.x9.ECNamedCurveTable;
 import org.bouncycastle.asn1.x9.X9ECParameters;
 import org.bouncycastle.crypto.params.ECDomainParameters;
 import org.bouncycastle.jce.spec.ECNamedCurveSpec;
 
-final class Secp256k1Parameters {
+final class EcCurveParameters {
 
-  static final ECParameterSpec SECP256K1_PARAM_SPEC;
-  static final BigInteger CURVE_ORDER;
-  static final BigInteger HALF_CURVE_ORDER;
+  private final String curveName;
+  private final ECParameterSpec paramSpec;
+  private final BigInteger curveOrder;
+  private final BigInteger halfCurveOrder;
 
-  static {
-    final X9ECParameters params = SECNamedCurves.getByName("secp256k1");
+  EcCurveParameters(final String curveName) {
+    final X9ECParameters params = ECNamedCurveTable.getByName(curveName);
     if (params == null) {
-      throw new IllegalStateException("secp256k1 curve parameters not available from BouncyCastle");
+      throw new IllegalArgumentException(
+          "Unsupported EC curve: " + curveName + ". Supported values: secp256k1, secp256r1");
     }
+    this.curveName = curveName;
     final ECDomainParameters ecParams =
         new ECDomainParameters(params.getCurve(), params.getG(), params.getN(), params.getH());
-
-    SECP256K1_PARAM_SPEC =
+    this.paramSpec =
         new ECNamedCurveSpec(
-            "secp256k1", ecParams.getCurve(), ecParams.getG(), ecParams.getN(), ecParams.getH());
-
-    CURVE_ORDER = params.getN();
+            curveName, ecParams.getCurve(), ecParams.getG(), ecParams.getN(), ecParams.getH());
+    this.curveOrder = params.getN();
     // Ethereum requires "low-S" signatures (EIP-2): S must be in the lower half of the curve order
-    HALF_CURVE_ORDER = CURVE_ORDER.shiftRight(1);
+    this.halfCurveOrder = curveOrder.shiftRight(1);
   }
 
-  private Secp256k1Parameters() {}
+  String getCurveName() {
+    return curveName;
+  }
+
+  ECParameterSpec getParamSpec() {
+    return paramSpec;
+  }
+
+  BigInteger getCurveOrder() {
+    return curveOrder;
+  }
+
+  BigInteger getHalfCurveOrder() {
+    return halfCurveOrder;
+  }
 }

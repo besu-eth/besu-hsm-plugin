@@ -36,25 +36,17 @@ import org.hyperledger.besu.plugin.services.securitymodule.data.Signature;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 class Pkcs11SecurityModuleTest {
 
-  private static PrivateKey privateKey;
-  private static ECPublicKey ecPublicKey;
   private static Provider provider;
 
-  private Pkcs11SecurityModule module;
-
   @BeforeAll
-  static void generateKeyPair() throws Exception {
+  static void setupProvider() {
     provider = new BouncyCastleProvider();
     Security.addProvider(provider);
-    final KeyPairGenerator kpg = KeyPairGenerator.getInstance("EC", provider);
-    kpg.initialize(new ECGenParameterSpec("secp256k1"));
-    final KeyPair keyPair = kpg.generateKeyPair();
-    privateKey = keyPair.getPrivate();
-    ecPublicKey = (ECPublicKey) keyPair.getPublic();
   }
 
   @AfterAll
@@ -62,58 +54,155 @@ class Pkcs11SecurityModuleTest {
     Security.removeProvider(provider.getName());
   }
 
-  @BeforeEach
-  void setUp() {
-    module = new Pkcs11SecurityModule(provider, privateKey, ecPublicKey, "NONEWithECDSA", false);
+  @Nested
+  class Secp256k1Tests {
+    private static final EcCurveParameters CURVE = new EcCurveParameters("secp256k1");
+    private static PrivateKey privateKey;
+    private static ECPublicKey ecPublicKey;
+    private Pkcs11SecurityModule module;
+
+    @BeforeAll
+    static void generateKeyPair() throws Exception {
+      final KeyPairGenerator kpg = KeyPairGenerator.getInstance("EC", provider);
+      kpg.initialize(new ECGenParameterSpec("secp256k1"));
+      final KeyPair keyPair = kpg.generateKeyPair();
+      privateKey = keyPair.getPrivate();
+      ecPublicKey = (ECPublicKey) keyPair.getPublic();
+    }
+
+    @BeforeEach
+    void setUp() {
+      module =
+          new Pkcs11SecurityModule(
+              provider, privateKey, ecPublicKey, "NONEWithECDSA", false, CURVE);
+    }
+
+    @Test
+    void signReturnsValidSignature() throws Exception {
+      final Bytes32 dataHash = Bytes32.random();
+      final Signature signature = module.sign(dataHash);
+
+      assertThat(signature).isNotNull();
+      assertThat(signature.getR().signum()).isPositive();
+      assertThat(signature.getS().signum()).isPositive();
+      assertThat(signature.getS()).isLessThanOrEqualTo(CURVE.getHalfCurveOrder());
+
+      final java.security.Signature verifier =
+          java.security.Signature.getInstance("NONEWithECDSA", provider);
+      verifier.initVerify(ecPublicKey);
+      verifier.update(dataHash.toArray());
+      final byte[] derSig = SignatureUtil.toDer(signature.getR(), signature.getS());
+      assertThat(verifier.verify(derSig)).isTrue();
+    }
+
+    @Test
+    void getPublicKeyReturnsCorrectPoint() {
+      final PublicKey publicKey = module.getPublicKey();
+      assertThat(publicKey).isNotNull();
+      assertThat(publicKey.getW()).isEqualTo(ecPublicKey.getW());
+    }
+
+    @Test
+    void calculateECDHKeyAgreementReturnsSecret() throws Exception {
+      final KeyPairGenerator kpg = KeyPairGenerator.getInstance("EC", provider);
+      kpg.initialize(new ECGenParameterSpec("secp256k1"));
+      final KeyPair otherKeyPair = kpg.generateKeyPair();
+      final ECPublicKey otherPublicKey = (ECPublicKey) otherKeyPair.getPublic();
+
+      final PublicKey partyKey = otherPublicKey::getW;
+      final Bytes32 secret = module.calculateECDHKeyAgreement(partyKey);
+
+      assertThat(secret).isNotNull();
+      assertThat(secret).isNotEqualTo(Bytes32.ZERO);
+
+      final KeyAgreement otherAgreement = KeyAgreement.getInstance("ECDH", provider);
+      otherAgreement.init(otherKeyPair.getPrivate());
+      otherAgreement.doPhase(ecPublicKey, true);
+      final Bytes32 expectedSecret = Bytes32.wrap(otherAgreement.generateSecret());
+      assertThat(secret).isEqualTo(expectedSecret);
+    }
+
+    @Test
+    void multipleSignaturesAreAllValidAndCanonical() throws Exception {
+      final Bytes32 dataHash = Bytes32.random();
+      final Signature sig1 = module.sign(dataHash);
+      final Signature sig2 = module.sign(dataHash);
+
+      assertThat(sig1.getS()).isLessThanOrEqualTo(CURVE.getHalfCurveOrder());
+      assertThat(sig2.getS()).isLessThanOrEqualTo(CURVE.getHalfCurveOrder());
+
+      final java.security.Signature verifier =
+          java.security.Signature.getInstance("NONEWithECDSA", provider);
+      verifier.initVerify(ecPublicKey);
+      verifier.update(dataHash.toArray());
+      assertThat(verifier.verify(SignatureUtil.toDer(sig1.getR(), sig1.getS()))).isTrue();
+
+      verifier.initVerify(ecPublicKey);
+      verifier.update(dataHash.toArray());
+      assertThat(verifier.verify(SignatureUtil.toDer(sig2.getR(), sig2.getS()))).isTrue();
+    }
   }
 
-  @Test
-  void signReturnsValidSignature() throws Exception {
-    final Bytes32 dataHash = Bytes32.random();
-    final Signature signature = module.sign(dataHash);
+  @Nested
+  class Secp256r1Tests {
+    private static final EcCurveParameters CURVE = new EcCurveParameters("secp256r1");
+    private static PrivateKey privateKey;
+    private static ECPublicKey ecPublicKey;
+    private Pkcs11SecurityModule module;
 
-    assertThat(signature).isNotNull();
-    assertThat(signature.getR()).isNotNull();
-    assertThat(signature.getS()).isNotNull();
-    assertThat(signature.getR().signum()).isPositive();
-    assertThat(signature.getS().signum()).isPositive();
-    assertThat(signature.getS()).isLessThanOrEqualTo(Secp256k1Parameters.HALF_CURVE_ORDER);
+    @BeforeAll
+    static void generateKeyPair() throws Exception {
+      final KeyPairGenerator kpg = KeyPairGenerator.getInstance("EC", provider);
+      kpg.initialize(new ECGenParameterSpec("secp256r1"));
+      final KeyPair keyPair = kpg.generateKeyPair();
+      privateKey = keyPair.getPrivate();
+      ecPublicKey = (ECPublicKey) keyPair.getPublic();
+    }
 
-    // Verify signature using the public key
-    final java.security.Signature verifier =
-        java.security.Signature.getInstance("NONEWithECDSA", provider);
-    verifier.initVerify(ecPublicKey);
-    verifier.update(dataHash.toArray());
-    final byte[] derSig = SignatureUtil.toDer(signature.getR(), signature.getS());
-    assertThat(verifier.verify(derSig)).isTrue();
-  }
+    @BeforeEach
+    void setUp() {
+      module =
+          new Pkcs11SecurityModule(
+              provider, privateKey, ecPublicKey, "NONEWithECDSA", false, CURVE);
+    }
 
-  @Test
-  void getPublicKeyReturnsCorrectPoint() {
-    final PublicKey publicKey = module.getPublicKey();
-    assertThat(publicKey).isNotNull();
-    assertThat(publicKey.getW()).isEqualTo(ecPublicKey.getW());
-  }
+    @Test
+    void signReturnsValidSignature() throws Exception {
+      final Bytes32 dataHash = Bytes32.random();
+      final Signature signature = module.sign(dataHash);
 
-  @Test
-  void calculateECDHKeyAgreementReturnsSecret() throws Exception {
-    final KeyPairGenerator kpg = KeyPairGenerator.getInstance("EC", provider);
-    kpg.initialize(new ECGenParameterSpec("secp256k1"));
-    final KeyPair otherKeyPair = kpg.generateKeyPair();
-    final ECPublicKey otherPublicKey = (ECPublicKey) otherKeyPair.getPublic();
+      assertThat(signature).isNotNull();
+      assertThat(signature.getR().signum()).isPositive();
+      assertThat(signature.getS().signum()).isPositive();
+      assertThat(signature.getS()).isLessThanOrEqualTo(CURVE.getHalfCurveOrder());
 
-    final PublicKey partyKey = otherPublicKey::getW;
-    final Bytes32 secret = module.calculateECDHKeyAgreement(partyKey);
+      final java.security.Signature verifier =
+          java.security.Signature.getInstance("NONEWithECDSA", provider);
+      verifier.initVerify(ecPublicKey);
+      verifier.update(dataHash.toArray());
+      final byte[] derSig = SignatureUtil.toDer(signature.getR(), signature.getS());
+      assertThat(verifier.verify(derSig)).isTrue();
+    }
 
-    assertThat(secret).isNotNull();
-    assertThat(secret).isNotEqualTo(Bytes32.ZERO);
+    @Test
+    void calculateECDHKeyAgreementReturnsSecret() throws Exception {
+      final KeyPairGenerator kpg = KeyPairGenerator.getInstance("EC", provider);
+      kpg.initialize(new ECGenParameterSpec("secp256r1"));
+      final KeyPair otherKeyPair = kpg.generateKeyPair();
+      final ECPublicKey otherPublicKey = (ECPublicKey) otherKeyPair.getPublic();
 
-    // Verify by computing the same ECDH from the other side
-    final KeyAgreement otherAgreement = KeyAgreement.getInstance("ECDH", provider);
-    otherAgreement.init(otherKeyPair.getPrivate());
-    otherAgreement.doPhase(ecPublicKey, true);
-    final Bytes32 expectedSecret = Bytes32.wrap(otherAgreement.generateSecret());
-    assertThat(secret).isEqualTo(expectedSecret);
+      final PublicKey partyKey = otherPublicKey::getW;
+      final Bytes32 secret = module.calculateECDHKeyAgreement(partyKey);
+
+      assertThat(secret).isNotNull();
+      assertThat(secret).isNotEqualTo(Bytes32.ZERO);
+
+      final KeyAgreement otherAgreement = KeyAgreement.getInstance("ECDH", provider);
+      otherAgreement.init(otherKeyPair.getPrivate());
+      otherAgreement.doPhase(ecPublicKey, true);
+      final Bytes32 expectedSecret = Bytes32.wrap(otherAgreement.generateSecret());
+      assertThat(secret).isEqualTo(expectedSecret);
+    }
   }
 
   @Test
@@ -150,25 +239,22 @@ class Pkcs11SecurityModuleTest {
   }
 
   @Test
-  void multipleSignaturesAreAllValidAndCanonical() throws Exception {
-    final Bytes32 dataHash = Bytes32.random();
-    final Signature sig1 = module.sign(dataHash);
-    final Signature sig2 = module.sign(dataHash);
+  void rejectsCurveMismatchBetweenKeyAndConfig() throws Exception {
+    // Generate a secp256k1 key but configure with secp256r1 curve params
+    final KeyPairGenerator kpg = KeyPairGenerator.getInstance("EC", provider);
+    kpg.initialize(new ECGenParameterSpec("secp256k1"));
+    final KeyPair keyPair = kpg.generateKeyPair();
 
-    assertThat(sig1.getR().signum()).isPositive();
-    assertThat(sig2.getR().signum()).isPositive();
-    assertThat(sig1.getS()).isLessThanOrEqualTo(Secp256k1Parameters.HALF_CURVE_ORDER);
-    assertThat(sig2.getS()).isLessThanOrEqualTo(Secp256k1Parameters.HALF_CURVE_ORDER);
-
-    // Verify both signatures are valid for the same data
-    final java.security.Signature verifier =
-        java.security.Signature.getInstance("NONEWithECDSA", provider);
-    verifier.initVerify(ecPublicKey);
-    verifier.update(dataHash.toArray());
-    assertThat(verifier.verify(SignatureUtil.toDer(sig1.getR(), sig1.getS()))).isTrue();
-
-    verifier.initVerify(ecPublicKey);
-    verifier.update(dataHash.toArray());
-    assertThat(verifier.verify(SignatureUtil.toDer(sig2.getR(), sig2.getS()))).isTrue();
+    assertThatThrownBy(
+            () ->
+                new Pkcs11SecurityModule(
+                    provider,
+                    keyPair.getPrivate(),
+                    (ECPublicKey) keyPair.getPublic(),
+                    "NONEWithECDSA",
+                    false,
+                    new EcCurveParameters("secp256r1")))
+        .isInstanceOf(SecurityModuleException.class)
+        .hasMessageContaining("does not match configured curve");
   }
 }

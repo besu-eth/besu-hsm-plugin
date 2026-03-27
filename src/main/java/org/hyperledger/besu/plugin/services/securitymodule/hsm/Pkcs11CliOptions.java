@@ -38,6 +38,28 @@ public class Pkcs11CliOptions {
       paramLabel = "<label>")
   private String privateKeyAlias;
 
+  @Option(
+      names = "--plugin-" + SECURITY_MODULE_NAME + "-ec-curve",
+      description = "Elliptic curve name: ${COMPLETION-CANDIDATES} (default: ${DEFAULT-VALUE})",
+      paramLabel = "<curve>")
+  private EcCurve ecCurve = EcCurve.SECP256K1;
+
+  enum EcCurve {
+    SECP256K1("secp256k1"),
+    SECP256R1("secp256r1");
+
+    private final String curveName;
+
+    EcCurve(final String curveName) {
+      this.curveName = curveName;
+    }
+
+    @Override
+    public String toString() {
+      return curveName;
+    }
+  }
+
   public Path getPkcs11ConfigPath() {
     return pkcs11ConfigPath;
   }
@@ -48,5 +70,9 @@ public class Pkcs11CliOptions {
 
   public String getPrivateKeyAlias() {
     return privateKeyAlias;
+  }
+
+  public String getEcCurve() {
+    return ecCurve.curveName;
   }
 }
