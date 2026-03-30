@@ -115,23 +115,16 @@ for details.
 
 ## Known Limitations
 
-### DiscV5 (Discovery v5) Not Supported
+### DiscV5 (Discovery v5) — secp256k1 Only
 
-The PKCS#11 HSM plugin does not support the `calculateECDHKeyAgreementCompressed` method required
-by Besu's DiscV5 discovery protocol. This method needs the full compressed EC point (SEC1 format:
-prefix byte + x-coordinate) from the ECDH scalar multiplication, but the PKCS#11 standard's
-`CKM_ECDH1_DERIVE` mechanism only returns the x-coordinate — the y-parity needed for the
-compression prefix is discarded.
+DiscV5 support for **secp256k1** keys is being implemented in
+[PR #9](https://github.com/besu-eth/besu-hsm-plugin/pull/9).
 
-**Impact:** HSM-backed validators must use DiscV4 (`--bootnodes`) or static peering
-(`--static-nodes-file`) for peer discovery rather than relying on DiscV5.
+For **secp256r1** keys, DiscV5 is not supported because Besu's ENR (Ethereum Node Record)
+implementation does not include secp256r1 support.
 
-**Why this can't be fixed with native PKCS#11 calls:** The limitation is in the PKCS#11 spec itself,
-not the Java wrapper. `CKM_ECDH1_DERIVE` with `CKD_NULL` returns only the x-coordinate per
-ANSI X9.63. The derived object is a `CKO_SECRET_KEY` (no `CKA_EC_POINT` attribute), and requesting
-a larger `CKA_VALUE_LEN` doesn't help — the ECDH primitive only produces 32 bytes. This is
-confirmed across SoftHSM2, AWS CloudHSM, YubiHSM2, and Thales Luna. Using Java's FFM API to call
-`C_DeriveKey` directly would yield the same x-only result.
+**Impact:** HSM-backed validators using secp256r1 keys must use DiscV4 (`--bootnodes`) or static
+peering (`--static-nodes-file`) for peer discovery rather than relying on DiscV5.
 
 ## Useful Links
 
