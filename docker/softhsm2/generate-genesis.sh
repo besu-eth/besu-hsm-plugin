@@ -8,6 +8,7 @@ set -e
 #   Default node-count is 4.
 
 NODE_COUNT="${1:-4}"
+EC_CURVE="${EC_CURVE:-secp256k1}"
 DATA_DIR="/data"
 OUTPUT_DIR="${DATA_DIR}/output"
 
@@ -43,6 +44,7 @@ cat > "${TMPDIR}/qbftConfigFile.json" <<EOF
 {
   "genesis": {
     "config": {
+      "ecCurve": "${EC_CURVE}",
       "chainId": 1337,
       "berlinBlock": 0,
       "londonBlock": 0,

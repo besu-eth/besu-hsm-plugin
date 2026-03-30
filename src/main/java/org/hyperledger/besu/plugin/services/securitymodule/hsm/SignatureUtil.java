@@ -14,10 +14,6 @@
  */
 package org.hyperledger.besu.plugin.services.securitymodule.hsm;
 
-import static org.hyperledger.besu.plugin.services.securitymodule.hsm.Secp256k1Parameters.CURVE_ORDER;
-import static org.hyperledger.besu.plugin.services.securitymodule.hsm.Secp256k1Parameters.HALF_CURVE_ORDER;
-import static org.hyperledger.besu.plugin.services.securitymodule.hsm.Secp256k1Parameters.SECP256K1_PARAM_SPEC;
-
 import java.io.ByteArrayOutputStream;
 import java.math.BigInteger;
 import java.security.KeyFactory;
@@ -37,16 +33,20 @@ import org.hyperledger.besu.plugin.services.securitymodule.data.Signature;
 
 final class SignatureUtil {
 
-  private SignatureUtil() {}
+  private final EcCurveParameters curveParams;
 
-  static Signature extractRAndS(final byte[] signatureBytes, final boolean isP1363) {
+  SignatureUtil(final EcCurveParameters curveParams) {
+    this.curveParams = curveParams;
+  }
+
+  Signature extractRAndS(final byte[] signatureBytes, final boolean isP1363) {
     if (isP1363) {
       return extractRAndSFromP1363(signatureBytes);
     }
     return extractRAndSFromDER(signatureBytes);
   }
 
-  private static Signature extractRAndSFromP1363(final byte[] signatureBytes) {
+  private Signature extractRAndSFromP1363(final byte[] signatureBytes) {
     if (signatureBytes.length != 64) {
       throw new SecurityModuleException(
           "Invalid P1363 signature length: expected 64, got " + signatureBytes.length);
@@ -56,7 +56,7 @@ final class SignatureUtil {
     return canonicalize(r, s);
   }
 
-  private static Signature extractRAndSFromDER(final byte[] der) {
+  private Signature extractRAndSFromDER(final byte[] der) {
     try (final ASN1InputStream asn1InputStream = new ASN1InputStream(der)) {
       if (!(asn1InputStream.readObject() instanceof final DLSequence seq)) {
         throw new SecurityModuleException("DER signature is not a valid ASN.1 SEQUENCE");
@@ -84,14 +84,17 @@ final class SignatureUtil {
     }
   }
 
-  private static Signature canonicalize(final BigInteger r, final BigInteger s) {
-    if (r.signum() <= 0 || r.compareTo(CURVE_ORDER) >= 0) {
+  private Signature canonicalize(final BigInteger r, final BigInteger s) {
+    final BigInteger curveOrder = curveParams.getCurveOrder();
+    final BigInteger halfCurveOrder = curveParams.getHalfCurveOrder();
+
+    if (r.signum() <= 0 || r.compareTo(curveOrder) >= 0) {
       throw new SecurityModuleException("Invalid signature: R is out of range");
     }
 
-    final BigInteger canonicalS = s.compareTo(HALF_CURVE_ORDER) > 0 ? CURVE_ORDER.subtract(s) : s;
+    final BigInteger canonicalS = s.compareTo(halfCurveOrder) > 0 ? curveOrder.subtract(s) : s;
 
-    if (canonicalS.signum() <= 0 || canonicalS.compareTo(CURVE_ORDER) >= 0) {
+    if (canonicalS.signum() <= 0 || canonicalS.compareTo(curveOrder) >= 0) {
       throw new SecurityModuleException(
           "Invalid signature: S is out of range after canonicalization");
     }
@@ -114,11 +117,10 @@ final class SignatureUtil {
     }
   }
 
-  static java.security.PublicKey ecPointToJcePublicKey(
-      final ECPoint ecPoint, final Provider provider) {
+  java.security.PublicKey ecPointToJcePublicKey(final ECPoint ecPoint, final Provider provider) {
     try {
       return KeyFactory.getInstance("EC", provider)
-          .generatePublic(new ECPublicKeySpec(ecPoint, SECP256K1_PARAM_SPEC));
+          .generatePublic(new ECPublicKeySpec(ecPoint, curveParams.getParamSpec()));
     } catch (final InvalidKeySpecException | NoSuchAlgorithmException e) {
       throw new SecurityModuleException("Error converting ECPoint to PublicKey", e);
     }

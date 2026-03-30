@@ -27,6 +27,10 @@ import org.junit.jupiter.api.Test;
 
 class SignatureUtilTest {
 
+  private static final EcCurveParameters SECP256K1 = new EcCurveParameters("secp256k1");
+  private static final EcCurveParameters SECP256R1 = new EcCurveParameters("secp256r1");
+  private final SignatureUtil signatureUtil = new SignatureUtil(SECP256K1);
+
   private static final BigInteger KNOWN_R =
       new BigInteger("79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798", 16);
   private static final BigInteger KNOWN_S =
@@ -35,96 +39,77 @@ class SignatureUtilTest {
   @Test
   void extractRAndSFromDER() throws Exception {
     final byte[] der = buildDerSignature(KNOWN_R, KNOWN_S);
-    final Signature sig = SignatureUtil.extractRAndS(der, false);
+    final Signature sig = signatureUtil.extractRAndS(der, false);
     assertThat(sig.getR()).isEqualTo(KNOWN_R);
     assertThat(sig.getS()).isEqualTo(KNOWN_S);
   }
 
   @Test
   void extractRAndSFromP1363() {
-    final byte[] p1363 = new byte[64];
-    final byte[] rBytes = KNOWN_R.toByteArray();
-    final byte[] sBytes = KNOWN_S.toByteArray();
-    // BigInteger may have leading zero byte; copy right-aligned into 32-byte slots
-    System.arraycopy(
-        rBytes,
-        rBytes.length > 32 ? 1 : 0,
-        p1363,
-        32 - Math.min(rBytes.length, 32),
-        Math.min(rBytes.length, 32));
-    System.arraycopy(
-        sBytes,
-        sBytes.length > 32 ? 1 : 0,
-        p1363,
-        64 - Math.min(sBytes.length, 32),
-        Math.min(sBytes.length, 32));
-
-    final Signature sig = SignatureUtil.extractRAndS(p1363, true);
+    final byte[] p1363 = toP1363(KNOWN_R, KNOWN_S);
+    final Signature sig = signatureUtil.extractRAndS(p1363, true);
     assertThat(sig.getR()).isEqualTo(KNOWN_R);
     assertThat(sig.getS()).isEqualTo(KNOWN_S);
   }
 
   @Test
   void canonicalizesHighS() throws Exception {
-    // Use an S value greater than HALF_CURVE_ORDER
-    final BigInteger highS = Secp256k1Parameters.CURVE_ORDER.subtract(KNOWN_S);
-    assertThat(highS).isGreaterThan(Secp256k1Parameters.HALF_CURVE_ORDER);
+    final BigInteger highS = SECP256K1.getCurveOrder().subtract(KNOWN_S);
+    assertThat(highS).isGreaterThan(SECP256K1.getHalfCurveOrder());
 
     final byte[] der = buildDerSignature(KNOWN_R, highS);
-    final Signature sig = SignatureUtil.extractRAndS(der, false);
+    final Signature sig = signatureUtil.extractRAndS(der, false);
     assertThat(sig.getR()).isEqualTo(KNOWN_R);
     assertThat(sig.getS()).isEqualTo(KNOWN_S);
   }
 
   @Test
   void canonicalizesHighSInP1363() {
-    final BigInteger highS = Secp256k1Parameters.CURVE_ORDER.subtract(KNOWN_S);
-    final byte[] p1363 = new byte[64];
-    final byte[] rBytes = KNOWN_R.toByteArray();
-    final byte[] sBytes = highS.toByteArray();
-    System.arraycopy(
-        rBytes,
-        rBytes.length > 32 ? 1 : 0,
-        p1363,
-        32 - Math.min(rBytes.length, 32),
-        Math.min(rBytes.length, 32));
-    System.arraycopy(
-        sBytes,
-        sBytes.length > 32 ? 1 : 0,
-        p1363,
-        64 - Math.min(sBytes.length, 32),
-        Math.min(sBytes.length, 32));
+    final BigInteger highS = SECP256K1.getCurveOrder().subtract(KNOWN_S);
+    final byte[] p1363 = toP1363(KNOWN_R, highS);
 
-    final Signature sig = SignatureUtil.extractRAndS(p1363, true);
+    final Signature sig = signatureUtil.extractRAndS(p1363, true);
+    assertThat(sig.getR()).isEqualTo(KNOWN_R);
+    assertThat(sig.getS()).isEqualTo(KNOWN_S);
+  }
+
+  @Test
+  void canonicalizesHighSWithSecp256r1() throws Exception {
+    final SignatureUtil r1Util = new SignatureUtil(SECP256R1);
+    final BigInteger highS = SECP256R1.getCurveOrder().subtract(KNOWN_S);
+    assertThat(highS).isGreaterThan(SECP256R1.getHalfCurveOrder());
+
+    final byte[] der = buildDerSignature(KNOWN_R, highS);
+    final Signature sig = r1Util.extractRAndS(der, false);
     assertThat(sig.getR()).isEqualTo(KNOWN_R);
     assertThat(sig.getS()).isEqualTo(KNOWN_S);
   }
 
   @Test
   void rejectsInvalidP1363Length() {
-    assertThatThrownBy(() -> SignatureUtil.extractRAndS(new byte[63], true))
+    assertThatThrownBy(() -> signatureUtil.extractRAndS(new byte[63], true))
         .isInstanceOf(SecurityModuleException.class)
         .hasMessageContaining("Invalid P1363 signature length");
   }
 
   @Test
   void rejectsInvalidDER() {
-    assertThatThrownBy(() -> SignatureUtil.extractRAndS(new byte[] {0x00, 0x01}, false))
+    assertThatThrownBy(() -> signatureUtil.extractRAndS(new byte[] {0x00, 0x01}, false))
         .isInstanceOf(SecurityModuleException.class);
   }
 
   @Test
   void rejectsZeroR() throws Exception {
     final byte[] der = buildDerSignature(BigInteger.ZERO, KNOWN_S);
-    assertThatThrownBy(() -> SignatureUtil.extractRAndS(der, false))
+    assertThatThrownBy(() -> signatureUtil.extractRAndS(der, false))
         .isInstanceOf(SecurityModuleException.class)
         .hasMessageContaining("non-positive");
   }
 
   @Test
   void rejectsRGreaterThanOrEqualToCurveOrder() throws Exception {
-    final byte[] der = buildDerSignature(Secp256k1Parameters.CURVE_ORDER, KNOWN_S);
-    assertThatThrownBy(() -> SignatureUtil.extractRAndS(der, false))
+    final byte[] der = buildDerSignature(SECP256K1.getCurveOrder(), KNOWN_S);
+    assertThatThrownBy(() -> signatureUtil.extractRAndS(der, false))
         .isInstanceOf(SecurityModuleException.class)
         .hasMessageContaining("R is out of range");
   }
@@ -134,5 +119,24 @@ class SignatureUtilTest {
     v.add(new ASN1Integer(r));
     v.add(new ASN1Integer(s));
     return new DERSequence(v).getEncoded();
+  }
+
+  private static byte[] toP1363(final BigInteger r, final BigInteger s) {
+    final byte[] p1363 = new byte[64];
+    final byte[] rBytes = r.toByteArray();
+    final byte[] sBytes = s.toByteArray();
+    System.arraycopy(
+        rBytes,
+        rBytes.length > 32 ? 1 : 0,
+        p1363,
+        32 - Math.min(rBytes.length, 32),
+        Math.min(rBytes.length, 32));
+    System.arraycopy(
+        sBytes,
+        sBytes.length > 32 ? 1 : 0,
+        p1363,
+        64 - Math.min(sBytes.length, 32),
+        Math.min(sBytes.length, 32));
+    return p1363;
   }
 }
