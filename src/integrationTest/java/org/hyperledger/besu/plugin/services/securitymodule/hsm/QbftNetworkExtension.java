@@ -16,7 +16,13 @@ package org.hyperledger.besu.plugin.services.securitymodule.hsm;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -61,6 +67,7 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
   private static final int P2P_PORT = 30303;
 
   private final String ecCurve;
+  private final boolean discV5Enabled;
   private final Path distZip;
 
   private ImageFromDockerfile image;
@@ -70,9 +77,15 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
   private List<Path> tokenDirs;
   private List<String> publicKeys;
   private List<GenericContainer<?>> besuContainers;
+  private List<ToStringConsumer> nodeLogConsumers;
 
   QbftNetworkExtension(final String ecCurve) {
+    this(ecCurve, false);
+  }
+
+  QbftNetworkExtension(final String ecCurve, final boolean discV5Enabled) {
     this.ecCurve = ecCurve;
+    this.discV5Enabled = discV5Enabled;
     this.distZip = findDistZip();
   }
 
@@ -108,15 +121,25 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
 
     // Phase 3: Start QBFT network
     besuContainers = new ArrayList<>();
+    nodeLogConsumers = new ArrayList<>();
     startBootnode();
-    final String bootnodeEnodeUrl = getBootnodeEnodeUrl();
+    final String bootnodeUrl = discV5Enabled ? getBootnodeEnrUrl() : getBootnodeEnodeUrl();
     for (int i = 1; i < NODE_COUNT; i++) {
-      startValidatorNode(i, bootnodeEnodeUrl);
+      startValidatorNode(i, bootnodeUrl);
     }
   }
 
   @Override
   public void afterAll(final ExtensionContext context) {
+    // Always dump Besu logs for debugging — integration tests are slow, logs are valuable
+    if (nodeLogConsumers != null) {
+      for (int i = 0; i < nodeLogConsumers.size(); i++) {
+        System.err.println(
+            "=== Besu node-" + i + " logs (" + ecCurve + ", discV5=" + discV5Enabled + ") ===");
+        System.err.println(nodeLogConsumers.get(i).toUtf8String());
+        System.err.println("=== End node-" + i + " logs ===");
+      }
+    }
     if (besuContainers != null) {
       besuContainers.forEach(GenericContainer::stop);
     }
@@ -176,6 +199,13 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
     return NODE_COUNT;
   }
 
+  String getNodeLogs(final int index) {
+    if (nodeLogConsumers != null && index < nodeLogConsumers.size()) {
+      return nodeLogConsumers.get(index).toUtf8String();
+    }
+    return "";
+  }
+
   private void generateNodeKey(final int nodeIndex, final Path tokenDir) {
     final ToStringConsumer logConsumer = new ToStringConsumer();
 
@@ -220,34 +250,14 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
   }
 
   private void startBootnode() {
-    final ToStringConsumer logConsumer = new ToStringConsumer();
-
-    final GenericContainer<?> container =
-        new GenericContainer<>(image)
-            .withNetwork(network)
-            .withNetworkAliases("besu-node-0")
-            .withExposedPorts(RPC_PORT, P2P_PORT)
-            .withFileSystemBind(tokenDirs.get(0).toString(), "/var/lib/tokens")
-            .withFileSystemBind(sharedDataDir.toString(), "/data")
-            .withCopyFileToContainer(MountableFile.forHostPath(distZip), "/tmp/besu-hsm-plugin.zip")
-            .withCreateContainerCmdModifier(
-                cmd -> {
-                  cmd.withEntrypoint("/bin/sh", "-c");
-                  cmd.withCmd(besuCommand(null));
-                })
-            .withLogConsumer(logConsumer)
-            .waitingFor(
-                Wait.forLogMessage(".*Ethereum main loop is up.*", 1)
-                    .withStartupTimeout(Duration.ofMinutes(5)));
-
-    container.start();
-    besuContainers.add(container);
+    startNode(0, null);
   }
 
   private String getBootnodeEnodeUrl() {
     final ContainerState bootnode = besuContainers.get(0);
     final String bootnodeIp =
-        bootnode
+        besuContainers
+            .get(0)
             .getContainerInfo()
             .getNetworkSettings()
             .getNetworks()
@@ -258,7 +268,38 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
     return "enode://" + publicKeys.get(0) + "@" + bootnodeIp + ":" + P2P_PORT;
   }
 
-  private void startValidatorNode(final int nodeIndex, final String bootnodeEnodeUrl) {
+  private String getBootnodeEnrUrl() {
+    try {
+      final GenericContainer<?> bootnode = besuContainers.get(0);
+      final int port = bootnode.getMappedPort(RPC_PORT);
+      final String body =
+          "{\"jsonrpc\":\"2.0\",\"method\":\"admin_nodeInfo\",\"params\":[],\"id\":1}";
+      final HttpRequest request =
+          HttpRequest.newBuilder()
+              .uri(URI.create("http://localhost:" + port))
+              .header("Content-Type", "application/json")
+              .POST(HttpRequest.BodyPublishers.ofString(body))
+              .timeout(Duration.ofSeconds(10))
+              .build();
+      final String response =
+          HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString()).body();
+      final JsonNode json = new ObjectMapper().readTree(response);
+      assertThat(json.has("result"))
+          .withFailMessage("admin_nodeInfo RPC error: %s", response)
+          .isTrue();
+      final String enr = json.get("result").get("enr").asText();
+      assertThat(enr).startsWith("enr:");
+      return enr;
+    } catch (final Exception e) {
+      throw new RuntimeException("Failed to get ENR from bootnode via admin_nodeInfo", e);
+    }
+  }
+
+  private void startValidatorNode(final int nodeIndex, final String bootnodeUrl) {
+    startNode(nodeIndex, bootnodeUrl);
+  }
+
+  private void startNode(final int nodeIndex, final String bootnodeUrl) {
     final ToStringConsumer logConsumer = new ToStringConsumer();
 
     final GenericContainer<?> container =
@@ -272,7 +313,7 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
             .withCreateContainerCmdModifier(
                 cmd -> {
                   cmd.withEntrypoint("/bin/sh", "-c");
-                  cmd.withCmd(besuCommand(bootnodeEnodeUrl));
+                  cmd.withCmd(besuCommand(bootnodeUrl));
                 })
             .withLogConsumer(logConsumer)
             .waitingFor(
@@ -281,11 +322,20 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
 
     container.start();
     besuContainers.add(container);
+    nodeLogConsumers.add(logConsumer);
   }
 
-  private String besuCommand(final String bootnodeEnodeUrl) {
+  private String besuCommand(final String bootnodeUrl) {
     final StringBuilder cmd = new StringBuilder();
     cmd.append(INSTALL_PLUGIN_CMD);
+    if (discV5Enabled) {
+      // Resolve container's own Docker network IP at runtime for --p2p-host
+      // so that ENR records contain the correct routable IP address
+      // grep for IPv4 pattern to avoid picking up an IPv6 address
+      cmd.append(
+          " && export MY_IP=$(grep -oE '\\b[0-9]{1,3}(\\.[0-9]{1,3}){3}\\b' /etc/hosts"
+              + " | grep -v '^127\\.' | head -1)");
+    }
     cmd.append(" && /entrypoint-besu.sh");
     cmd.append(" --genesis-file=/data/genesis.json");
     cmd.append(" --security-module=pkcs11-hsm");
@@ -294,14 +344,20 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
     cmd.append(" --plugin-pkcs11-hsm-key-alias=testkey");
     cmd.append(" --plugin-pkcs11-hsm-ec-curve=").append(ecCurve);
     cmd.append(" --rpc-http-enabled");
-    cmd.append(" --rpc-http-api=ETH,NET,QBFT");
+    cmd.append(" --rpc-http-api=ETH,NET,QBFT,ADMIN");
     cmd.append(" --rpc-http-host=0.0.0.0");
     cmd.append(" --host-allowlist=*");
+    if (discV5Enabled) {
+      cmd.append(" --p2p-host=$MY_IP");
+    }
     cmd.append(" --p2p-port=").append(P2P_PORT);
     cmd.append(" --min-gas-price=0");
     cmd.append(" --profile=ENTERPRISE");
-    if (bootnodeEnodeUrl != null) {
-      cmd.append(" --bootnodes=").append(bootnodeEnodeUrl);
+    if (discV5Enabled) {
+      cmd.append(" --Xv5-discovery-enabled=true");
+    }
+    if (bootnodeUrl != null) {
+      cmd.append(" --bootnodes=").append(bootnodeUrl);
     }
     return cmd.toString();
   }

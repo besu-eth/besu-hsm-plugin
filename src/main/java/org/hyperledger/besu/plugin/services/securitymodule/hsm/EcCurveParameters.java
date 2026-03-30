@@ -27,6 +27,8 @@ final class EcCurveParameters {
   private final ECParameterSpec paramSpec;
   private final BigInteger curveOrder;
   private final BigInteger halfCurveOrder;
+  private final org.bouncycastle.math.ec.ECCurve bcCurve;
+  private final org.bouncycastle.math.ec.ECPoint generator;
 
   EcCurveParameters(final String curveName) {
     final X9ECParameters params = ECNamedCurveTable.getByName(curveName);
@@ -35,8 +37,10 @@ final class EcCurveParameters {
           "Unsupported EC curve: " + curveName + ". Supported values: secp256k1, secp256r1");
     }
     this.curveName = curveName;
+    this.bcCurve = params.getCurve();
+    this.generator = params.getG();
     final ECDomainParameters ecParams =
-        new ECDomainParameters(params.getCurve(), params.getG(), params.getN(), params.getH());
+        new ECDomainParameters(bcCurve, generator, params.getN(), params.getH());
     this.paramSpec =
         new ECNamedCurveSpec(
             curveName, ecParams.getCurve(), ecParams.getG(), ecParams.getN(), ecParams.getH());
@@ -59,5 +63,13 @@ final class EcCurveParameters {
 
   BigInteger getHalfCurveOrder() {
     return halfCurveOrder;
+  }
+
+  org.bouncycastle.math.ec.ECCurve getBcCurve() {
+    return bcCurve;
+  }
+
+  org.bouncycastle.math.ec.ECPoint getGenerator() {
+    return generator;
   }
 }

@@ -126,6 +126,10 @@ final class SignatureUtil {
     }
   }
 
+  org.bouncycastle.math.ec.ECPoint jcaPointToBcPoint(final ECPoint jcaPoint) {
+    return curveParams.getBcCurve().createPoint(jcaPoint.getAffineX(), jcaPoint.getAffineY());
+  }
+
   static final class SignatureImpl implements Signature {
     private final BigInteger r;
     private final BigInteger s;

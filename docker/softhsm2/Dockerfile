@@ -1,4 +1,5 @@
-FROM hyperledger/besu:develop
+# TODO: revert to hyperledger/besu:develop once official release includes calculateECDHKeyAgreementCompressed
+FROM hyperledger/besu:26.3.0-develop
 
 USER root
 

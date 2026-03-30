@@ -15,11 +15,14 @@
 package org.hyperledger.besu.plugin.services.securitymodule.hsm;
 
 import com.google.common.annotations.VisibleForTesting;
+import java.math.BigInteger;
 import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
 import java.security.Provider;
 import java.security.interfaces.ECPublicKey;
+import java.security.spec.ECPoint;
 import javax.crypto.KeyAgreement;
+import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
 import org.hyperledger.besu.plugin.services.securitymodule.SecurityModule;
 import org.hyperledger.besu.plugin.services.securitymodule.SecurityModuleException;
@@ -39,13 +42,13 @@ public class Pkcs11SecurityModule implements SecurityModule {
   private final String signatureAlgorithm;
   private final boolean useP1363;
   private final SignatureUtil signatureUtil;
+  private final EcCurveParameters curveParams;
 
   public Pkcs11SecurityModule(final Pkcs11CliOptions cliOptions) {
     LOG.debug("Creating Pkcs11SecurityModule ...");
     validateCliOptions(cliOptions);
-    final EcCurveParameters curveParams;
     try {
-      curveParams = new EcCurveParameters(cliOptions.getEcCurve());
+      this.curveParams = new EcCurveParameters(cliOptions.getEcCurve());
     } catch (final IllegalArgumentException e) {
       throw new SecurityModuleException("Unsupported EC curve: " + cliOptions.getEcCurve(), e);
     }
@@ -77,6 +80,7 @@ public class Pkcs11SecurityModule implements SecurityModule {
     this.pkcs11Provider = null;
     this.provider = provider;
     this.privateKey = privateKey;
+    this.curveParams = curveParams;
     validatePublicKeyCurve(ecPublicKey, curveParams);
     this.publicKey = ecPublicKey::getW;
     this.signatureAlgorithm = signatureAlgorithm;
@@ -153,6 +157,99 @@ public class Pkcs11SecurityModule implements SecurityModule {
     } catch (final Exception e) {
       throw new SecurityModuleException("Error calculating ECDH key agreement", e);
     }
+  }
+
+  /**
+   * Perform ECDH key agreement returning the compressed EC point.
+   *
+   * <p>Returns the full compressed EC point (SEC1 compressed format: prefix byte + x-coordinate)
+   * from the ECDH scalar multiplication. This is required by protocols such as DiscV5 which use the
+   * compressed point as input keying material for HKDF key derivation.
+   *
+   * <p>Since the HSM only exposes the x-coordinate of the ECDH shared point (via {@link
+   * #calculateECDHKeyAgreement}), this method recovers the y-parity using a two-ECDH verification
+   * technique: a second ECDH call with a probe point {@code Q + G} disambiguates the two candidate
+   * y values derived from the curve equation.
+   *
+   * @param partyKey the key with which an agreement is to be created.
+   * @return the compressed EC point in SEC1 format (33 bytes)
+   * @throws SecurityModuleException if the operation is not supported or fails
+   */
+  @Override
+  public Bytes calculateECDHKeyAgreementCompressed(final PublicKey partyKey)
+      throws SecurityModuleException {
+    LOG.debug("Calculating compressed ECDH key agreement ...");
+    try {
+      final org.bouncycastle.math.ec.ECCurve bcCurve = curveParams.getBcCurve();
+
+      // Validate that the party key lies on the configured curve
+      validatePartyKeyOnCurve(partyKey.getW(), bcCurve);
+
+      // Step 1: Get x-coordinate from HSM ECDH
+      final Bytes32 xCoord = calculateECDHKeyAgreement(partyKey);
+
+      // Step 2: Recover the even-y candidate point from x using the curve equation
+      final byte[] compressedEven = new byte[33];
+      compressedEven[0] = 0x02;
+      System.arraycopy(xCoord.toArray(), 0, compressedEven, 1, 32);
+      final org.bouncycastle.math.ec.ECPoint candidateEven = bcCurve.decodePoint(compressedEven);
+
+      // Step 3: Compute probe point Q' = Q + G (EC point addition in software)
+      final org.bouncycastle.math.ec.ECPoint bcPartyPoint =
+          signatureUtil.jcaPointToBcPoint(partyKey.getW());
+      final org.bouncycastle.math.ec.ECPoint probePoint =
+          bcPartyPoint.add(curveParams.getGenerator()).normalize();
+
+      // Step 4: Second ECDH call with probe point through HSM
+      final ECPoint probeJcaPoint =
+          new ECPoint(
+              probePoint.getAffineXCoord().toBigInteger(),
+              probePoint.getAffineYCoord().toBigInteger());
+      final Bytes32 xVerify = calculateECDHKeyAgreement(() -> probeJcaPoint);
+
+      // Step 5: Determine correct y-parity
+      // d*(Q+G) = d*Q + d*G = P + P_us, so check which candidate satisfies this
+      final org.bouncycastle.math.ec.ECPoint ourPubKeyBc =
+          signatureUtil.jcaPointToBcPoint(publicKey.getW());
+      final org.bouncycastle.math.ec.ECPoint sumEven = candidateEven.add(ourPubKeyBc).normalize();
+      final BigInteger sumEvenX = sumEven.getAffineXCoord().toBigInteger();
+
+      if (toBytes32(sumEvenX).equals(xVerify)) {
+        return Bytes.wrap(candidateEven.getEncoded(true));
+      } else {
+        return Bytes.wrap(candidateEven.negate().getEncoded(true));
+      }
+    } catch (final SecurityModuleException e) {
+      throw e;
+    } catch (final Exception e) {
+      throw new SecurityModuleException(
+          "Unexpected error while calculating compressed ECDH key agreement", e);
+    }
+  }
+
+  private static void validatePartyKeyOnCurve(
+      final ECPoint point, final org.bouncycastle.math.ec.ECCurve bcCurve) {
+    try {
+      bcCurve.createPoint(point.getAffineX(), point.getAffineY()).normalize();
+    } catch (final IllegalArgumentException e) {
+      throw new SecurityModuleException(
+          "Party key is not a valid point on the configured curve", e);
+    }
+  }
+
+  private static Bytes32 toBytes32(final BigInteger value) {
+    final byte[] bytes = value.toByteArray();
+    if (bytes.length == 32) {
+      return Bytes32.wrap(bytes);
+    }
+    final byte[] padded = new byte[32];
+    if (bytes.length > 32) {
+      // strip leading zero byte from unsigned BigInteger encoding
+      System.arraycopy(bytes, bytes.length - 32, padded, 0, 32);
+    } else {
+      System.arraycopy(bytes, 0, padded, 32 - bytes.length, bytes.length);
+    }
+    return Bytes32.wrap(padded);
   }
 
   void removeProvider() {

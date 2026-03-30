@@ -19,7 +19,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.math.BigInteger;
 import java.nio.file.Path;
+import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.PrivateKey;
@@ -27,7 +29,11 @@ import java.security.Provider;
 import java.security.Security;
 import java.security.interfaces.ECPublicKey;
 import java.security.spec.ECGenParameterSpec;
+import java.security.spec.ECPoint;
+import java.security.spec.ECPrivateKeySpec;
+import java.security.spec.ECPublicKeySpec;
 import javax.crypto.KeyAgreement;
+import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.hyperledger.besu.plugin.services.securitymodule.SecurityModuleException;
@@ -123,6 +129,55 @@ class Pkcs11SecurityModuleTest {
     }
 
     @Test
+    void compressedECDHReturnsOddYCompressedPoint() throws Exception {
+      // DiscV5 community test vector — expected prefix 0x03 (odd y)
+      final Pkcs11SecurityModule vectorModule =
+          createModuleFromPrivateKey(
+              "fb757dc581730490a1d7a00deea65e9b1936924caaea8f44d476014856b68736",
+              "secp256k1",
+              CURVE);
+
+      final ECPoint peerPoint =
+          uncompressedHexToECPoint(
+              "049961e4c2356d61bedb83052c115d311acb3a96f5777296dcf29735113026623"
+                  + "1503061ac4aaee666073d7e5bc2c80c3f5c5b500c1cb5fd0a76abbb6b675ad157");
+      final PublicKey partyKey = () -> peerPoint;
+
+      final Bytes result = vectorModule.calculateECDHKeyAgreementCompressed(partyKey);
+
+      assertThat(result)
+          .isEqualTo(
+              Bytes.fromHexString(
+                  "0x033b11a2a1f214567e1537ce5e509ffd9b21373247f2a3ff6841f4976f53165e7e"));
+      // x-coordinate portion matches existing ECDH
+      assertThat(result.slice(1)).isEqualTo(vectorModule.calculateECDHKeyAgreement(partyKey));
+    }
+
+    @Test
+    void compressedECDHReturnsEvenYCompressedPoint() throws Exception {
+      // Test vector with expected prefix 0x02 (even y)
+      final Pkcs11SecurityModule vectorModule =
+          createModuleFromPrivateKey(
+              "0000000000000000000000000000000000000000000000000000000000000066",
+              "secp256k1",
+              CURVE);
+
+      final ECPoint peerPoint =
+          uncompressedHexToECPoint(
+              "049961e4c2356d61bedb83052c115d311acb3a96f5777296dcf29735113026623"
+                  + "1503061ac4aaee666073d7e5bc2c80c3f5c5b500c1cb5fd0a76abbb6b675ad157");
+      final PublicKey partyKey = () -> peerPoint;
+
+      final Bytes result = vectorModule.calculateECDHKeyAgreementCompressed(partyKey);
+
+      assertThat(result)
+          .isEqualTo(
+              Bytes.fromHexString(
+                  "0x0279ea6ca033f1c1155a7aaf67ae07c11aaf75aa61fe926025f78c1ea58a5ccbf5"));
+      assertThat(result.slice(1)).isEqualTo(vectorModule.calculateECDHKeyAgreement(partyKey));
+    }
+
+    @Test
     void multipleSignaturesAreAllValidAndCanonical() throws Exception {
       final Bytes32 dataHash = Bytes32.random();
       final Signature sig1 = module.sign(dataHash);
@@ -203,6 +258,52 @@ class Pkcs11SecurityModuleTest {
       final Bytes32 expectedSecret = Bytes32.wrap(otherAgreement.generateSecret());
       assertThat(secret).isEqualTo(expectedSecret);
     }
+
+    @Test
+    void compressedECDHReturnsEvenYCompressedPoint() throws Exception {
+      final Pkcs11SecurityModule vectorModule =
+          createModuleFromPrivateKey(
+              "00000000000000000000000000000000000000000000000000000000000000c9",
+              "secp256r1",
+              CURVE);
+
+      final ECPoint peerPoint =
+          uncompressedHexToECPoint(
+              "043ed7a28ec648edce5d5b7e252f6b2aafbb44835114a24b3caa8f710f64993bc"
+                  + "25711a34cdc9229080b639f09977feb7ca91ecce1649bfea8ad85c72b206ade7e");
+      final PublicKey partyKey = () -> peerPoint;
+
+      final Bytes result = vectorModule.calculateECDHKeyAgreementCompressed(partyKey);
+
+      assertThat(result)
+          .isEqualTo(
+              Bytes.fromHexString(
+                  "0x024ecb31c5d3d0903b8b183eaaa14b02c3255f24547059222d6d568152a615e483"));
+      assertThat(result.slice(1)).isEqualTo(vectorModule.calculateECDHKeyAgreement(partyKey));
+    }
+
+    @Test
+    void compressedECDHReturnsOddYCompressedPoint() throws Exception {
+      final Pkcs11SecurityModule vectorModule =
+          createModuleFromPrivateKey(
+              "00000000000000000000000000000000000000000000000000000000000000cf",
+              "secp256r1",
+              CURVE);
+
+      final ECPoint peerPoint =
+          uncompressedHexToECPoint(
+              "043ed7a28ec648edce5d5b7e252f6b2aafbb44835114a24b3caa8f710f64993bc"
+                  + "25711a34cdc9229080b639f09977feb7ca91ecce1649bfea8ad85c72b206ade7e");
+      final PublicKey partyKey = () -> peerPoint;
+
+      final Bytes result = vectorModule.calculateECDHKeyAgreementCompressed(partyKey);
+
+      assertThat(result)
+          .isEqualTo(
+              Bytes.fromHexString(
+                  "0x0309e80076f4629105093c0ede8f4355924e9f2133ef8be69995925aa12381c381"));
+      assertThat(result.slice(1)).isEqualTo(vectorModule.calculateECDHKeyAgreement(partyKey));
+    }
   }
 
   @Test
@@ -236,6 +337,37 @@ class Pkcs11SecurityModuleTest {
     assertThatThrownBy(() -> new Pkcs11SecurityModule(options))
         .isInstanceOf(SecurityModuleException.class)
         .hasMessageContaining("key alias");
+  }
+
+  private static Pkcs11SecurityModule createModuleFromPrivateKey(
+      final String privateKeyHex, final String curveName, final EcCurveParameters curveParams)
+      throws Exception {
+    final BigInteger privKeyScalar = new BigInteger(privateKeyHex, 16);
+    final org.bouncycastle.math.ec.ECPoint bcPubPoint =
+        curveParams.getGenerator().multiply(privKeyScalar).normalize();
+    final ECPoint jcaPubPoint =
+        new ECPoint(
+            bcPubPoint.getAffineXCoord().toBigInteger(),
+            bcPubPoint.getAffineYCoord().toBigInteger());
+
+    final KeyFactory kf = KeyFactory.getInstance("EC", provider);
+    final PrivateKey privKey =
+        kf.generatePrivate(new ECPrivateKeySpec(privKeyScalar, curveParams.getParamSpec()));
+    final ECPublicKey pubKey =
+        (ECPublicKey)
+            kf.generatePublic(new ECPublicKeySpec(jcaPubPoint, curveParams.getParamSpec()));
+
+    return new Pkcs11SecurityModule(provider, privKey, pubKey, "NONEWithECDSA", false, curveParams);
+  }
+
+  private static ECPoint uncompressedHexToECPoint(final String hex) {
+    final byte[] bytes = Bytes.fromHexString(hex).toArray();
+    // Skip the 0x04 prefix
+    final byte[] xBytes = new byte[32];
+    final byte[] yBytes = new byte[32];
+    System.arraycopy(bytes, 1, xBytes, 0, 32);
+    System.arraycopy(bytes, 33, yBytes, 0, 32);
+    return new ECPoint(new BigInteger(1, xBytes), new BigInteger(1, yBytes));
   }
 
   @Test

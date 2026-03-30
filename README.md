@@ -115,23 +115,21 @@ for details.
 
 ## Known Limitations
 
-### DiscV5 (Discovery v5) Not Supported
+### DiscV5 Requires secp256k1
 
-The PKCS#11 HSM plugin does not support the `calculateECDHKeyAgreementCompressed` method required
-by Besu's DiscV5 discovery protocol. This method needs the full compressed EC point (SEC1 format:
-prefix byte + x-coordinate) from the ECDH scalar multiplication, but the PKCS#11 standard's
-`CKM_ECDH1_DERIVE` mechanism only returns the x-coordinate — the y-parity needed for the
-compression prefix is discarded.
+Besu's DiscV5 discovery protocol always uses secp256k1 keys from ENR (Ethereum Node Records),
+regardless of the curve configured for block signing. This means DiscV5 (`--Xv5-discovery-enabled`)
+only works when the HSM key is on the secp256k1 curve. If the HSM is configured for secp256r1,
+DiscV5 is not available — use DiscV4 (`--bootnodes`) or static peering (`--static-nodes-file`)
+instead. This is a Besu requirement, not a plugin limitation.
 
-**Impact:** HSM-backed validators must use DiscV4 (`--bootnodes`) or static peering
-(`--static-nodes-file`) for peer discovery rather than relying on DiscV5.
+### DiscV5 Compressed ECDH — Two HSM Round-Trips
 
-**Why this can't be fixed with native PKCS#11 calls:** The limitation is in the PKCS#11 spec itself,
-not the Java wrapper. `CKM_ECDH1_DERIVE` with `CKD_NULL` returns only the x-coordinate per
-ANSI X9.63. The derived object is a `CKO_SECRET_KEY` (no `CKA_EC_POINT` attribute), and requesting
-a larger `CKA_VALUE_LEN` doesn't help — the ECDH primitive only produces 32 bytes. This is
-confirmed across SoftHSM2, AWS CloudHSM, YubiHSM2, and Thales Luna. Using Java's FFM API to call
-`C_DeriveKey` directly would yield the same x-only result.
+Besu's DiscV5 discovery protocol requires the compressed EC point (SEC1 format: prefix byte +
+x-coordinate) from ECDH scalar multiplication. Since the PKCS#11 `CKM_ECDH1_DERIVE` mechanism
+only returns the x-coordinate, the plugin uses a two-ECDH-call verification technique to recover
+the y-parity needed for the compression prefix. This means each compressed ECDH operation requires
+two HSM round-trips instead of one. This is acceptable because DiscV5 handshakes are infrequent.
 
 ## Useful Links
 
