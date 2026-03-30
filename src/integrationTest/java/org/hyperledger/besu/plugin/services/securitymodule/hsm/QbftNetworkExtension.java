@@ -32,6 +32,7 @@ import java.util.List;
 import org.junit.jupiter.api.extension.AfterAllCallback;
 import org.junit.jupiter.api.extension.BeforeAllCallback;
 import org.junit.jupiter.api.extension.ExtensionContext;
+import org.testcontainers.containers.ContainerState;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.Network;
 import org.testcontainers.containers.output.ToStringConsumer;
@@ -253,6 +254,7 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
   }
 
   private String getBootnodeEnodeUrl() {
+    final ContainerState bootnode = besuContainers.get(0);
     final String bootnodeIp =
         besuContainers
             .get(0)
