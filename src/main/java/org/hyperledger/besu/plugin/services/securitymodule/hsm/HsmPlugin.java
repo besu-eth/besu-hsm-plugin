@@ -24,15 +24,15 @@ import org.slf4j.LoggerFactory;
 
 @AutoService(BesuPlugin.class)
 public class HsmPlugin implements BesuPlugin {
-  static final String SECURITY_MODULE_NAME = "pkcs11-hsm";
+  static final String SECURITY_MODULE_NAME = "hsm";
   private static final Logger LOG = LoggerFactory.getLogger(HsmPlugin.class);
 
-  private final Pkcs11CliOptions cliOptions = new Pkcs11CliOptions();
-  private volatile Pkcs11SecurityModule module;
+  private final HsmCliOptions cliOptions = new HsmCliOptions();
+  private volatile HsmSecurityModule module;
 
   @Override
   public void register(final ServiceManager serviceManager) {
-    LOG.info("Registering PKCS#11 HSM plugin ...");
+    LOG.info("Registering HSM plugin ...");
     registerCliOptions(serviceManager);
     registerSecurityModule(serviceManager);
   }
@@ -51,19 +51,19 @@ public class HsmPlugin implements BesuPlugin {
         .register(
             SECURITY_MODULE_NAME,
             () -> {
-              this.module = new Pkcs11SecurityModule(cliOptions);
+              this.module = new HsmSecurityModule(cliOptions);
               return this.module;
             });
   }
 
   @Override
   public void start() {
-    LOG.debug("Starting PKCS#11 HSM plugin ...");
+    LOG.debug("Starting HSM plugin ...");
   }
 
   @Override
   public void stop() {
-    LOG.debug("Stopping PKCS#11 HSM plugin ...");
+    LOG.debug("Stopping HSM plugin ...");
     if (module != null) {
       module.removeProvider();
     }

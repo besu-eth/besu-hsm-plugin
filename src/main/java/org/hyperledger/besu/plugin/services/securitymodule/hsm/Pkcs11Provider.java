@@ -28,7 +28,7 @@ import org.hyperledger.besu.plugin.services.securitymodule.SecurityModuleExcepti
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-class Pkcs11Provider {
+class Pkcs11Provider implements HsmProvider {
   private static final Logger LOG = LoggerFactory.getLogger(Pkcs11Provider.class);
 
   private final Provider provider;
@@ -132,19 +132,23 @@ class Pkcs11Provider {
     }
   }
 
-  void removeProvider() {
+  @Override
+  public void removeProvider() {
     Security.removeProvider(provider.getName());
   }
 
-  Provider getProvider() {
+  @Override
+  public Provider getProvider() {
     return provider;
   }
 
-  PrivateKey getPrivateKey() {
+  @Override
+  public PrivateKey getPrivateKey() {
     return privateKey;
   }
 
-  ECPublicKey getEcPublicKey() {
+  @Override
+  public ECPublicKey getEcPublicKey() {
     return ecPublicKey;
   }
 }
