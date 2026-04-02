@@ -18,7 +18,7 @@ import java.io.ByteArrayOutputStream;
 import java.math.BigInteger;
 import java.security.KeyFactory;
 import java.security.NoSuchAlgorithmException;
-import java.security.Provider;
+import java.security.NoSuchProviderException;
 import java.security.spec.ECPoint;
 import java.security.spec.ECPublicKeySpec;
 import java.security.spec.InvalidKeySpecException;
@@ -31,6 +31,10 @@ import org.bouncycastle.asn1.DLSequence;
 import org.hyperledger.besu.plugin.services.securitymodule.SecurityModuleException;
 import org.hyperledger.besu.plugin.services.securitymodule.data.Signature;
 
+/**
+ * Utility for parsing ECDSA signatures (DER and P1363 formats), applying low-S canonicalization,
+ * and converting EC points to JCE public keys.
+ */
 final class SignatureUtil {
 
   private final EcCurveParameters curveParams;
@@ -117,11 +121,11 @@ final class SignatureUtil {
     }
   }
 
-  java.security.PublicKey ecPointToJcePublicKey(final ECPoint ecPoint, final Provider provider) {
+  java.security.PublicKey ecPointToJcePublicKey(final ECPoint ecPoint) {
     try {
-      return KeyFactory.getInstance("EC", provider)
+      return KeyFactory.getInstance("EC", "BC")
           .generatePublic(new ECPublicKeySpec(ecPoint, curveParams.getParamSpec()));
-    } catch (final InvalidKeySpecException | NoSuchAlgorithmException e) {
+    } catch (final InvalidKeySpecException | NoSuchAlgorithmException | NoSuchProviderException e) {
       throw new SecurityModuleException("Error converting ECPoint to PublicKey", e);
     }
   }

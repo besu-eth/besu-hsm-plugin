@@ -69,10 +69,10 @@ abstract class QbftHsmIntegrationTestBase {
       container.start();
 
       final String logs = toStringConsumer.toUtf8String();
-      assertThat(logs).contains("--plugin-pkcs11-hsm-config-path");
-      assertThat(logs).contains("--plugin-pkcs11-hsm-password-path");
-      assertThat(logs).contains("--plugin-pkcs11-hsm-key-alias");
-      assertThat(logs).contains("--plugin-pkcs11-hsm-ec-curve");
+      assertThat(logs).contains("--plugin-hsm-config-path");
+      assertThat(logs).contains("--plugin-hsm-password-path");
+      assertThat(logs).contains("--plugin-hsm-key-alias");
+      assertThat(logs).contains("--plugin-hsm-ec-curve");
     }
   }
 

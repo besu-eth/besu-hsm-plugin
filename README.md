@@ -2,20 +2,29 @@
  [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/besu-eth/besu-hsm-plugin/blob/main/LICENSE)
  [![Discord](https://img.shields.io/discord/905194001349627914?logo=Hyperledger&style=plastic)](https://discord.com/invite/hyperledger)
 
-A [PKCS#11](https://en.wikipedia.org/wiki/PKCS_11) based Hardware Security Module (HSM) plugin for [Hyperledger Besu](https://github.com/besu-eth/besu). This plugin enables Besu 
-validators to delegate cryptographic signing operations to an HSM via the standard PKCS#11 interface, keeping private 
+A Hardware Security Module (HSM) plugin for [Hyperledger Besu](https://github.com/besu-eth/besu). This plugin enables Besu 
+validators to delegate cryptographic signing operations to an HSM, keeping private 
 keys secure in dedicated hardware rather than in software.
+
+Two provider modes are supported:
+
+- **Generic PKCS#11** — Uses Java's SunPKCS11 provider to work with any [PKCS#11](https://en.wikipedia.org/wiki/PKCS_11) compatible HSM
+  (SoftHSM2, YubiHSM2, Thales Luna, etc.)
+- **AWS CloudHSM JCE** — Uses the [AWS CloudHSM JCE provider](https://docs.aws.amazon.com/cloudhsm/latest/userguide/java-library-install.html)
+  for direct integration with AWS CloudHSM
 
 ## Architecture
 
 ![Besu HSM Plugin Architecture](docs/besu-hsm-plugin-architecture.png)
 
-The plugin sits between the Besu client (validator) and HSM providers using the PKCS#11 interface. It supports:
+The plugin sits between the Besu client (validator) and HSM providers. It supports:
 
-- **Cloud HSM providers** — Connect to remote HSMs via vendor-specific PKCS#11 libraries (e.g. AWS CloudHSM, Azure 
-Dedicated HSM, Google Cloud HSM)
-- **Local HSMs** — Connect to on-premise HSM hardware via PKCS#11 libraries
-- **Configuration** — Provider selection and authentication (secret/API key) are specified through plugin configuration
+- **Generic PKCS#11** — Connect to any PKCS#11-compatible HSM via Java's SunPKCS11 provider
+  (cloud or local: AWS CloudHSM, Azure Dedicated HSM, Google Cloud HSM, SoftHSM2, YubiHSM2, etc.)
+- **AWS CloudHSM JCE** — Connect directly to AWS CloudHSM via the CloudHSM JCE provider (no
+  PKCS#11 configuration needed)
+- **Configuration** — Provider selection, key aliases, and authentication are specified through
+  plugin CLI options
 
 ## HSM Key Setup
 
@@ -95,6 +104,51 @@ This is a limitation of Java's SunPKCS11 `KeyStore` implementation, not PKCS#11 
 does not require certificates for key access, but Java's `KeyStore` abstraction models private keys as
 `PrivateKeyEntry` objects which always include a certificate chain. Without a certificate, `KeyStore.getKey()`
 will not return the private key at all.
+
+## Plugin CLI Options
+
+The plugin registers the following CLI options with Besu:
+
+| Option | Description | Required |
+|--------|-------------|----------|
+| `--plugin-hsm-provider-type` | Provider type: `generic-pkcs11` (default) or `cloudhsm-jce` | No |
+| `--plugin-hsm-config-path` | Path to the PKCS#11 configuration file | `generic-pkcs11` only |
+| `--plugin-hsm-password-path` | Path to the file containing the token PIN/password | `generic-pkcs11` only |
+| `--plugin-hsm-key-alias` | Alias/label of the private key on the HSM | Yes |
+| `--plugin-hsm-public-key-alias` | Alias/label of the public key on the HSM | `cloudhsm-jce` only |
+| `--plugin-hsm-ec-curve` | EC curve: `secp256k1` (default) or `secp256r1` | No |
+
+### Generic PKCS#11 Example
+
+```shell
+besu --security-module=hsm \
+  --plugin-hsm-config-path=/etc/besu/pkcs11.cfg \
+  --plugin-hsm-password-path=/etc/besu/hsm-pin.txt \
+  --plugin-hsm-key-alias=mykey
+```
+
+### AWS CloudHSM JCE Example
+
+The `cloudhsm-jce` provider uses the [AWS CloudHSM JCE provider](https://docs.aws.amazon.com/cloudhsm/latest/userguide/java-library-install.html)
+directly rather than going through a PKCS#11 library. The CloudHSM JCE jar is auto-loaded from
+`/opt/cloudhsm/java/` if it is not already on the classpath.
+
+Authentication is handled via the `HSM_USER` and `HSM_PASSWORD` environment variables (or
+equivalent system properties) as documented by AWS.
+
+```shell
+export HSM_USER=besu_crypto_user
+export HSM_PASSWORD=<password>
+
+besu --security-module=hsm \
+  --plugin-hsm-provider-type=cloudhsm-jce \
+  --plugin-hsm-key-alias=my-private-key \
+  --plugin-hsm-public-key-alias=my-public-key
+```
+
+> **Note:** The CloudHSM JCE provider requires separate aliases for the private and public keys
+> because CloudHSM does not associate certificates with key entries the way Java's SunPKCS11
+> `KeyStore` does.
 
 ## Experimental: secp256r1 Curve Support
 

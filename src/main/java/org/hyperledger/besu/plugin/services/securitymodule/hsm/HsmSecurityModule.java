@@ -28,11 +28,16 @@ import org.hyperledger.besu.plugin.services.securitymodule.data.Signature;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class Pkcs11SecurityModule implements SecurityModule {
-  private static final Logger LOG = LoggerFactory.getLogger(Pkcs11SecurityModule.class);
+/**
+ * {@link SecurityModule} implementation that delegates cryptographic operations (signing, ECDH) to
+ * an HSM via a configured {@link HsmProvider}. Supports both generic PKCS#11 tokens and AWS
+ * CloudHSM JCE.
+ */
+public class HsmSecurityModule implements SecurityModule {
+  private static final Logger LOG = LoggerFactory.getLogger(HsmSecurityModule.class);
   private static final String KEY_AGREEMENT_ALGORITHM = "ECDH";
 
-  private final Pkcs11Provider pkcs11Provider;
+  private final HsmProvider hsmProvider;
   private final Provider provider;
   private final PrivateKey privateKey;
   private final PublicKey publicKey;
@@ -40,8 +45,15 @@ public class Pkcs11SecurityModule implements SecurityModule {
   private final boolean useP1363;
   private final SignatureUtil signatureUtil;
 
-  public Pkcs11SecurityModule(final Pkcs11CliOptions cliOptions) {
-    LOG.debug("Creating Pkcs11SecurityModule ...");
+  /**
+   * Creates an {@link HsmSecurityModule} from CLI options, initializing the appropriate HSM
+   * provider.
+   *
+   * @param cliOptions the parsed CLI options specifying provider type, key aliases, and EC curve
+   * @throws SecurityModuleException if validation fails or the provider cannot be initialized
+   */
+  public HsmSecurityModule(final HsmCliOptions cliOptions) {
+    LOG.debug("Creating HsmSecurityModule ...");
     validateCliOptions(cliOptions);
     final EcCurveParameters curveParams;
     try {
@@ -51,14 +63,10 @@ public class Pkcs11SecurityModule implements SecurityModule {
     }
     LOG.info("Using EC curve: {}", curveParams.getCurveName());
     this.signatureUtil = new SignatureUtil(curveParams);
-    this.pkcs11Provider =
-        new Pkcs11Provider(
-            cliOptions.getPkcs11ConfigPath(),
-            cliOptions.getPkcs11PasswordPath(),
-            cliOptions.getPrivateKeyAlias());
-    this.provider = pkcs11Provider.getProvider();
-    this.privateKey = pkcs11Provider.getPrivateKey();
-    final ECPublicKey ecPublicKey = pkcs11Provider.getEcPublicKey();
+    this.hsmProvider = createHsmProvider(cliOptions);
+    this.provider = hsmProvider.getProvider();
+    this.privateKey = hsmProvider.getPrivateKey();
+    final ECPublicKey ecPublicKey = hsmProvider.getEcPublicKey();
     validatePublicKeyCurve(ecPublicKey, curveParams);
     this.publicKey = ecPublicKey::getW;
     this.useP1363 = probeP1363Support();
@@ -67,14 +75,14 @@ public class Pkcs11SecurityModule implements SecurityModule {
   }
 
   @VisibleForTesting
-  Pkcs11SecurityModule(
+  HsmSecurityModule(
       final Provider provider,
       final PrivateKey privateKey,
       final ECPublicKey ecPublicKey,
       final String signatureAlgorithm,
       final boolean useP1363,
       final EcCurveParameters curveParams) {
-    this.pkcs11Provider = null;
+    this.hsmProvider = null;
     this.provider = provider;
     this.privateKey = privateKey;
     validatePublicKeyCurve(ecPublicKey, curveParams);
@@ -84,16 +92,36 @@ public class Pkcs11SecurityModule implements SecurityModule {
     this.signatureUtil = new SignatureUtil(curveParams);
   }
 
-  private static void validateCliOptions(final Pkcs11CliOptions cliOptions) {
-    if (cliOptions.getPkcs11ConfigPath() == null) {
-      throw new SecurityModuleException("PKCS#11 configuration file path is not provided");
-    }
-    if (cliOptions.getPkcs11PasswordPath() == null) {
-      throw new SecurityModuleException("PKCS#11 password file path is not provided");
+  private static void validateCliOptions(final HsmCliOptions cliOptions) {
+    if (cliOptions.getProviderType() == HsmCliOptions.HsmProviderType.GENERIC_PKCS11) {
+      if (cliOptions.getPkcs11ConfigPath() == null) {
+        throw new SecurityModuleException("PKCS#11 configuration file path is not provided");
+      }
+      if (cliOptions.getPkcs11PasswordPath() == null) {
+        throw new SecurityModuleException("PKCS#11 password file path is not provided");
+      }
     }
     if (cliOptions.getPrivateKeyAlias() == null) {
-      throw new SecurityModuleException("PKCS#11 private key alias is not provided");
+      throw new SecurityModuleException("Private key alias is not provided");
     }
+    if (cliOptions.getProviderType() == HsmCliOptions.HsmProviderType.CLOUDHSM_JCE) {
+      if (cliOptions.getPublicKeyAlias() == null) {
+        throw new SecurityModuleException(
+            "Public key alias is required for cloudhsm-jce provider type");
+      }
+    }
+  }
+
+  private static HsmProvider createHsmProvider(final HsmCliOptions cliOptions) {
+    return switch (cliOptions.getProviderType()) {
+      case GENERIC_PKCS11 ->
+          new Pkcs11Provider(
+              cliOptions.getPkcs11ConfigPath(),
+              cliOptions.getPkcs11PasswordPath(),
+              cliOptions.getPrivateKeyAlias());
+      case CLOUDHSM_JCE ->
+          new CloudHsmJceProvider(cliOptions.getPrivateKeyAlias(), cliOptions.getPublicKeyAlias());
+    };
   }
 
   private static void validatePublicKeyCurve(
@@ -144,7 +172,7 @@ public class Pkcs11SecurityModule implements SecurityModule {
       throws SecurityModuleException {
     LOG.debug("Calculating ECDH key agreement ...");
     final java.security.PublicKey theirPublicKey =
-        signatureUtil.ecPointToJcePublicKey(partyKey.getW(), provider);
+        signatureUtil.ecPointToJcePublicKey(partyKey.getW());
     try {
       final KeyAgreement keyAgreement = KeyAgreement.getInstance(KEY_AGREEMENT_ALGORITHM, provider);
       keyAgreement.init(privateKey);
@@ -156,8 +184,8 @@ public class Pkcs11SecurityModule implements SecurityModule {
   }
 
   void removeProvider() {
-    if (pkcs11Provider != null) {
-      pkcs11Provider.removeProvider();
+    if (hsmProvider != null) {
+      hsmProvider.removeProvider();
     }
   }
 }

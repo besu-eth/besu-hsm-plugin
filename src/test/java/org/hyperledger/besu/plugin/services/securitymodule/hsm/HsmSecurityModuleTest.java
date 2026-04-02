@@ -39,7 +39,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-class Pkcs11SecurityModuleTest {
+class HsmSecurityModuleTest {
 
   private static Provider provider;
 
@@ -59,7 +59,7 @@ class Pkcs11SecurityModuleTest {
     private static final EcCurveParameters CURVE = new EcCurveParameters("secp256k1");
     private static PrivateKey privateKey;
     private static ECPublicKey ecPublicKey;
-    private Pkcs11SecurityModule module;
+    private HsmSecurityModule module;
 
     @BeforeAll
     static void generateKeyPair() throws Exception {
@@ -73,8 +73,7 @@ class Pkcs11SecurityModuleTest {
     @BeforeEach
     void setUp() {
       module =
-          new Pkcs11SecurityModule(
-              provider, privateKey, ecPublicKey, "NONEWithECDSA", false, CURVE);
+          new HsmSecurityModule(provider, privateKey, ecPublicKey, "NONEWithECDSA", false, CURVE);
     }
 
     @Test
@@ -148,7 +147,7 @@ class Pkcs11SecurityModuleTest {
     private static final EcCurveParameters CURVE = new EcCurveParameters("secp256r1");
     private static PrivateKey privateKey;
     private static ECPublicKey ecPublicKey;
-    private Pkcs11SecurityModule module;
+    private HsmSecurityModule module;
 
     @BeforeAll
     static void generateKeyPair() throws Exception {
@@ -162,8 +161,7 @@ class Pkcs11SecurityModuleTest {
     @BeforeEach
     void setUp() {
       module =
-          new Pkcs11SecurityModule(
-              provider, privateKey, ecPublicKey, "NONEWithECDSA", false, CURVE);
+          new HsmSecurityModule(provider, privateKey, ecPublicKey, "NONEWithECDSA", false, CURVE);
     }
 
     @Test
@@ -205,49 +203,80 @@ class Pkcs11SecurityModuleTest {
     }
   }
 
-  @Test
-  void validateCliOptionsRejectsNullConfigPath() {
-    final Pkcs11CliOptions options = mock(Pkcs11CliOptions.class);
-    when(options.getPkcs11ConfigPath()).thenReturn(null);
+  @Nested
+  class GenericPkcs11ValidationTests {
+    @Test
+    void rejectsNullConfigPath() {
+      final HsmCliOptions options = mock(HsmCliOptions.class);
+      when(options.getProviderType()).thenReturn(HsmCliOptions.HsmProviderType.GENERIC_PKCS11);
+      when(options.getPkcs11ConfigPath()).thenReturn(null);
 
-    assertThatThrownBy(() -> new Pkcs11SecurityModule(options))
-        .isInstanceOf(SecurityModuleException.class)
-        .hasMessageContaining("configuration file path");
+      assertThatThrownBy(() -> new HsmSecurityModule(options))
+          .isInstanceOf(SecurityModuleException.class)
+          .hasMessageContaining("configuration file path");
+    }
+
+    @Test
+    void rejectsNullPasswordPath() {
+      final HsmCliOptions options = mock(HsmCliOptions.class);
+      when(options.getProviderType()).thenReturn(HsmCliOptions.HsmProviderType.GENERIC_PKCS11);
+      when(options.getPkcs11ConfigPath()).thenReturn(Path.of("/tmp/config"));
+      when(options.getPkcs11PasswordPath()).thenReturn(null);
+
+      assertThatThrownBy(() -> new HsmSecurityModule(options))
+          .isInstanceOf(SecurityModuleException.class)
+          .hasMessageContaining("password file path");
+    }
+
+    @Test
+    void rejectsNullKeyAlias() {
+      final HsmCliOptions options = mock(HsmCliOptions.class);
+      when(options.getProviderType()).thenReturn(HsmCliOptions.HsmProviderType.GENERIC_PKCS11);
+      when(options.getPkcs11ConfigPath()).thenReturn(Path.of("/tmp/config"));
+      when(options.getPkcs11PasswordPath()).thenReturn(Path.of("/tmp/password"));
+      when(options.getPrivateKeyAlias()).thenReturn(null);
+
+      assertThatThrownBy(() -> new HsmSecurityModule(options))
+          .isInstanceOf(SecurityModuleException.class)
+          .hasMessageContaining("key alias");
+    }
   }
 
-  @Test
-  void validateCliOptionsRejectsNullPasswordPath() {
-    final Pkcs11CliOptions options = mock(Pkcs11CliOptions.class);
-    when(options.getPkcs11ConfigPath()).thenReturn(Path.of("/tmp/config"));
-    when(options.getPkcs11PasswordPath()).thenReturn(null);
+  @Nested
+  class CloudHsmJceValidationTests {
+    @Test
+    void rejectsNullKeyAlias() {
+      final HsmCliOptions options = mock(HsmCliOptions.class);
+      when(options.getProviderType()).thenReturn(HsmCliOptions.HsmProviderType.CLOUDHSM_JCE);
+      when(options.getPrivateKeyAlias()).thenReturn(null);
 
-    assertThatThrownBy(() -> new Pkcs11SecurityModule(options))
-        .isInstanceOf(SecurityModuleException.class)
-        .hasMessageContaining("password file path");
-  }
+      assertThatThrownBy(() -> new HsmSecurityModule(options))
+          .isInstanceOf(SecurityModuleException.class)
+          .hasMessageContaining("key alias");
+    }
 
-  @Test
-  void validateCliOptionsRejectsNullKeyAlias() {
-    final Pkcs11CliOptions options = mock(Pkcs11CliOptions.class);
-    when(options.getPkcs11ConfigPath()).thenReturn(Path.of("/tmp/config"));
-    when(options.getPkcs11PasswordPath()).thenReturn(Path.of("/tmp/password"));
-    when(options.getPrivateKeyAlias()).thenReturn(null);
+    @Test
+    void rejectsNullPublicKeyAlias() {
+      final HsmCliOptions options = mock(HsmCliOptions.class);
+      when(options.getProviderType()).thenReturn(HsmCliOptions.HsmProviderType.CLOUDHSM_JCE);
+      when(options.getPrivateKeyAlias()).thenReturn("mykey");
+      when(options.getPublicKeyAlias()).thenReturn(null);
 
-    assertThatThrownBy(() -> new Pkcs11SecurityModule(options))
-        .isInstanceOf(SecurityModuleException.class)
-        .hasMessageContaining("key alias");
+      assertThatThrownBy(() -> new HsmSecurityModule(options))
+          .isInstanceOf(SecurityModuleException.class)
+          .hasMessageContaining("Public key alias");
+    }
   }
 
   @Test
   void rejectsCurveMismatchBetweenKeyAndConfig() throws Exception {
-    // Generate a secp256k1 key but configure with secp256r1 curve params
     final KeyPairGenerator kpg = KeyPairGenerator.getInstance("EC", provider);
     kpg.initialize(new ECGenParameterSpec("secp256k1"));
     final KeyPair keyPair = kpg.generateKeyPair();
 
     assertThatThrownBy(
             () ->
-                new Pkcs11SecurityModule(
+                new HsmSecurityModule(
                     provider,
                     keyPair.getPrivate(),
                     (ECPublicKey) keyPair.getPublic(),

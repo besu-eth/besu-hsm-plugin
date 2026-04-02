@@ -21,6 +21,7 @@ import org.bouncycastle.asn1.x9.X9ECParameters;
 import org.bouncycastle.crypto.params.ECDomainParameters;
 import org.bouncycastle.jce.spec.ECNamedCurveSpec;
 
+/** Holds EC curve parameters (order, half-order, JCA parameter spec) for a named curve. */
 final class EcCurveParameters {
 
   private final String curveName;

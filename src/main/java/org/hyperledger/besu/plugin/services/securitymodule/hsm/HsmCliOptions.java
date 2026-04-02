@@ -19,16 +19,26 @@ import static org.hyperledger.besu.plugin.services.securitymodule.hsm.HsmPlugin.
 import java.nio.file.Path;
 import picocli.CommandLine.Option;
 
-public class Pkcs11CliOptions {
+/** CLI options for configuring the HSM plugin, registered via PicoCLI. */
+public class HsmCliOptions {
+
+  @Option(
+      names = "--plugin-" + SECURITY_MODULE_NAME + "-provider-type",
+      description = "HSM provider type: ${COMPLETION-CANDIDATES} (default: ${DEFAULT-VALUE})",
+      paramLabel = "<type>")
+  private HsmProviderType providerType = HsmProviderType.GENERIC_PKCS11;
+
   @Option(
       names = "--plugin-" + SECURITY_MODULE_NAME + "-config-path",
-      description = "Path to the PKCS11 configuration file",
+      description = "Path to the PKCS11 configuration file (required for generic-pkcs11)",
       paramLabel = "<path>")
   private Path pkcs11ConfigPath;
 
   @Option(
       names = "--plugin-" + SECURITY_MODULE_NAME + "-password-path",
-      description = "Path to the file that contains password or PIN to access PKCS11 token",
+      description =
+          "Path to the file that contains password or PIN to access PKCS11 token"
+              + " (required for generic-pkcs11)",
       paramLabel = "<path>")
   private Path pkcs11PasswordPath;
 
@@ -39,10 +49,33 @@ public class Pkcs11CliOptions {
   private String privateKeyAlias;
 
   @Option(
+      names = "--plugin-" + SECURITY_MODULE_NAME + "-public-key-alias",
+      description =
+          "Alias or label of the public key stored in the HSM (required for cloudhsm-jce)",
+      paramLabel = "<label>")
+  private String publicKeyAlias;
+
+  @Option(
       names = "--plugin-" + SECURITY_MODULE_NAME + "-ec-curve",
       description = "Elliptic curve name: ${COMPLETION-CANDIDATES} (default: ${DEFAULT-VALUE})",
       paramLabel = "<curve>")
   private EcCurve ecCurve = EcCurve.SECP256K1;
+
+  enum HsmProviderType {
+    GENERIC_PKCS11("generic-pkcs11"),
+    CLOUDHSM_JCE("cloudhsm-jce");
+
+    private final String typeName;
+
+    HsmProviderType(final String typeName) {
+      this.typeName = typeName;
+    }
+
+    @Override
+    public String toString() {
+      return typeName;
+    }
+  }
 
   enum EcCurve {
     SECP256K1("secp256k1"),
@@ -60,18 +93,32 @@ public class Pkcs11CliOptions {
     }
   }
 
+  /** Returns the selected HSM provider type. */
+  public HsmProviderType getProviderType() {
+    return providerType;
+  }
+
+  /** Returns the path to the PKCS#11 configuration file. */
   public Path getPkcs11ConfigPath() {
     return pkcs11ConfigPath;
   }
 
+  /** Returns the path to the file containing the PKCS#11 token PIN/password. */
   public Path getPkcs11PasswordPath() {
     return pkcs11PasswordPath;
   }
 
+  /** Returns the alias/label of the private key on the HSM. */
   public String getPrivateKeyAlias() {
     return privateKeyAlias;
   }
 
+  /** Returns the alias/label of the public key on the HSM (used by CloudHSM JCE provider). */
+  public String getPublicKeyAlias() {
+    return publicKeyAlias;
+  }
+
+  /** Returns the EC curve name (e.g. "secp256k1", "secp256r1"). */
   public String getEcCurve() {
     return ecCurve.curveName;
   }

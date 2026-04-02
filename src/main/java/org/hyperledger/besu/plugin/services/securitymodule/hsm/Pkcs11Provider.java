@@ -28,13 +28,25 @@ import org.hyperledger.besu.plugin.services.securitymodule.SecurityModuleExcepti
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-class Pkcs11Provider {
+/**
+ * HSM provider that uses Java's SunPKCS11 provider to access a PKCS#11 token. Requires a PKCS#11
+ * configuration file and a password file for token authentication.
+ */
+class Pkcs11Provider implements HsmProvider {
   private static final Logger LOG = LoggerFactory.getLogger(Pkcs11Provider.class);
 
   private final Provider provider;
   private final PrivateKey privateKey;
   private final ECPublicKey ecPublicKey;
 
+  /**
+   * Creates a new PKCS#11 provider, initializing the SunPKCS11 provider and loading keys.
+   *
+   * @param configPath path to the PKCS#11 configuration file
+   * @param passwordPath path to the file containing the token PIN/password
+   * @param keyAlias alias of the key pair stored on the PKCS#11 token
+   * @throws SecurityModuleException if any parameter is null/blank or initialization fails
+   */
   Pkcs11Provider(final Path configPath, final Path passwordPath, final String keyAlias) {
     if (configPath == null) {
       throw new SecurityModuleException("PKCS#11 configuration file path must not be null");
@@ -132,19 +144,23 @@ class Pkcs11Provider {
     }
   }
 
-  void removeProvider() {
+  @Override
+  public void removeProvider() {
     Security.removeProvider(provider.getName());
   }
 
-  Provider getProvider() {
+  @Override
+  public Provider getProvider() {
     return provider;
   }
 
-  PrivateKey getPrivateKey() {
+  @Override
+  public PrivateKey getPrivateKey() {
     return privateKey;
   }
 
-  ECPublicKey getEcPublicKey() {
+  @Override
+  public ECPublicKey getEcPublicKey() {
     return ecPublicKey;
   }
 }
