@@ -31,6 +31,10 @@ import org.bouncycastle.asn1.DLSequence;
 import org.hyperledger.besu.plugin.services.securitymodule.SecurityModuleException;
 import org.hyperledger.besu.plugin.services.securitymodule.data.Signature;
 
+/**
+ * Utility for parsing ECDSA signatures (DER and P1363 formats), applying low-S canonicalization,
+ * and converting EC points to JCE public keys.
+ */
 final class SignatureUtil {
 
   private final EcCurveParameters curveParams;

@@ -28,6 +28,11 @@ import org.hyperledger.besu.plugin.services.securitymodule.data.Signature;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * {@link SecurityModule} implementation that delegates cryptographic operations (signing, ECDH) to
+ * an HSM via a configured {@link HsmProvider}. Supports both generic PKCS#11 tokens and AWS
+ * CloudHSM JCE.
+ */
 public class HsmSecurityModule implements SecurityModule {
   private static final Logger LOG = LoggerFactory.getLogger(HsmSecurityModule.class);
   private static final String KEY_AGREEMENT_ALGORITHM = "ECDH";
@@ -40,6 +45,13 @@ public class HsmSecurityModule implements SecurityModule {
   private final boolean useP1363;
   private final SignatureUtil signatureUtil;
 
+  /**
+   * Creates an {@link HsmSecurityModule} from CLI options, initializing the appropriate HSM
+   * provider.
+   *
+   * @param cliOptions the parsed CLI options specifying provider type, key aliases, and EC curve
+   * @throws SecurityModuleException if validation fails or the provider cannot be initialized
+   */
   public HsmSecurityModule(final HsmCliOptions cliOptions) {
     LOG.debug("Creating HsmSecurityModule ...");
     validateCliOptions(cliOptions);

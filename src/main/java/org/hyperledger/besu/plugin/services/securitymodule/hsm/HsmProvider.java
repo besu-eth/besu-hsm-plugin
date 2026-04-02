@@ -18,12 +18,21 @@ import java.security.PrivateKey;
 import java.security.Provider;
 import java.security.interfaces.ECPublicKey;
 
+/**
+ * Abstraction over different HSM provider backends. Each implementation handles provider
+ * initialization, key loading, and cleanup for a specific HSM access mechanism.
+ */
 interface HsmProvider {
+
+  /** Returns the JCA {@link Provider} configured for this HSM backend. */
   Provider getProvider();
 
+  /** Returns the private key loaded from the HSM. */
   PrivateKey getPrivateKey();
 
+  /** Returns the EC public key loaded from the HSM. */
   ECPublicKey getEcPublicKey();
 
+  /** Removes the JCA provider from the {@link java.security.Security} registry. */
   void removeProvider();
 }

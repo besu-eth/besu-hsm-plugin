@@ -19,6 +19,7 @@ import static org.hyperledger.besu.plugin.services.securitymodule.hsm.HsmPlugin.
 import java.nio.file.Path;
 import picocli.CommandLine.Option;
 
+/** CLI options for configuring the HSM plugin, registered via PicoCLI. */
 public class HsmCliOptions {
 
   @Option(
@@ -92,26 +93,32 @@ public class HsmCliOptions {
     }
   }
 
+  /** Returns the selected HSM provider type. */
   public HsmProviderType getProviderType() {
     return providerType;
   }
 
+  /** Returns the path to the PKCS#11 configuration file. */
   public Path getPkcs11ConfigPath() {
     return pkcs11ConfigPath;
   }
 
+  /** Returns the path to the file containing the PKCS#11 token PIN/password. */
   public Path getPkcs11PasswordPath() {
     return pkcs11PasswordPath;
   }
 
+  /** Returns the alias/label of the private key on the HSM. */
   public String getPrivateKeyAlias() {
     return privateKeyAlias;
   }
 
+  /** Returns the alias/label of the public key on the HSM (used by CloudHSM JCE provider). */
   public String getPublicKeyAlias() {
     return publicKeyAlias;
   }
 
+  /** Returns the EC curve name (e.g. "secp256k1", "secp256r1"). */
   public String getEcCurve() {
     return ecCurve.curveName;
   }

@@ -22,6 +22,11 @@ import org.hyperledger.besu.plugin.services.SecurityModuleService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * Besu plugin that registers an HSM-backed {@link
+ * org.hyperledger.besu.plugin.services.securitymodule.SecurityModule}. Supports generic PKCS#11
+ * tokens and AWS CloudHSM via the JCE provider.
+ */
 @AutoService(BesuPlugin.class)
 public class HsmPlugin implements BesuPlugin {
   static final String SECURITY_MODULE_NAME = "hsm";

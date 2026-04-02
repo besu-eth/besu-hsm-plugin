@@ -30,6 +30,10 @@ import org.hyperledger.besu.plugin.services.securitymodule.SecurityModuleExcepti
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * HSM provider that uses the AWS CloudHSM JCE provider. The CloudHSM JCE jar is auto-loaded from
+ * {@code /opt/cloudhsm/java} if not already on the classpath.
+ */
 class CloudHsmJceProvider implements HsmProvider {
   private static final Logger LOG = LoggerFactory.getLogger(CloudHsmJceProvider.class);
   private static final String CLOUDHSM_PROVIDER_CLASS =
@@ -42,6 +46,13 @@ class CloudHsmJceProvider implements HsmProvider {
   private final PrivateKey privateKey;
   private final ECPublicKey ecPublicKey;
 
+  /**
+   * Creates a new CloudHSM JCE provider, initializing the provider and loading keys from the HSM.
+   *
+   * @param privateKeyAlias alias of the private key stored in CloudHSM
+   * @param publicKeyAlias alias of the public key stored in CloudHSM
+   * @throws SecurityModuleException if aliases are blank or key loading fails
+   */
   CloudHsmJceProvider(final String privateKeyAlias, final String publicKeyAlias) {
     if (privateKeyAlias == null || privateKeyAlias.isBlank()) {
       throw new SecurityModuleException("Private key alias must not be null or empty");
