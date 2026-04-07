@@ -87,48 +87,48 @@ class CloudHsmJceProvider implements HsmProvider {
   }
 
   private Class<?> loadCloudHsmProviderClass() {
-    // First, try loading from the existing classpath (e.g., jar in Besu plugins/ directory)
+    // First, try loading from default CloudHSM installation path (source of truth)
+    final List<Path> foundJars = findCloudHsmJars();
+    if (!foundJars.isEmpty()) {
+      try {
+        final URL[] jarUrls =
+            foundJars.stream()
+                .map(
+                    p -> {
+                      try {
+                        return p.toUri().toURL();
+                      } catch (final Exception e) {
+                        throw new SecurityModuleException(
+                            "Error converting jar path to URL: " + p, e);
+                      }
+                    })
+                .toArray(URL[]::new);
+
+        final URLClassLoader cloudHsmClassLoader =
+            new URLClassLoader(jarUrls, Thread.currentThread().getContextClassLoader());
+        LOG.info("Auto-loaded CloudHSM JCE jar from {}", foundJars.getFirst());
+        return cloudHsmClassLoader.loadClass(CLOUDHSM_PROVIDER_CLASS);
+      } catch (final SecurityModuleException e) {
+        throw e;
+      } catch (final ClassNotFoundException e) {
+        throw new SecurityModuleException(
+            "CloudHSM JCE provider class not found in jars at " + CLOUDHSM_JAR_DIR, e);
+      }
+    }
+
+    // Fall back to classpath (e.g., jar in Besu plugins/ directory)
+    LOG.debug(
+        "CloudHSM JCE jars not found in {}, attempting to load from classpath", CLOUDHSM_JAR_DIR);
     try {
       return Class.forName(CLOUDHSM_PROVIDER_CLASS);
     } catch (final ClassNotFoundException e) {
-      LOG.debug(
-          "CloudHSM JCE provider not found on classpath, attempting auto-load from {}",
-          CLOUDHSM_JAR_DIR);
-    }
-
-    // Auto-load from default CloudHSM installation path
-    final List<Path> foundJars = findCloudHsmJars();
-    if (foundJars.isEmpty()) {
       throw new SecurityModuleException(
-          "CloudHSM JCE provider jar not found on classpath or in "
+          "CloudHSM JCE provider jar not found in "
               + CLOUDHSM_JAR_DIR
-              + ". Install the CloudHSM JCE provider package"
-              + " or copy the jar to Besu's plugins/ directory.");
-    }
-
-    try {
-      final URL[] jarUrls =
-          foundJars.stream()
-              .map(
-                  p -> {
-                    try {
-                      return p.toUri().toURL();
-                    } catch (final Exception e) {
-                      throw new SecurityModuleException(
-                          "Error converting jar path to URL: " + p, e);
-                    }
-                  })
-              .toArray(URL[]::new);
-
-      final URLClassLoader cloudHsmClassLoader =
-          new URLClassLoader(jarUrls, Thread.currentThread().getContextClassLoader());
-      LOG.info("Auto-loaded CloudHSM JCE jar from {}", foundJars.getFirst());
-      return cloudHsmClassLoader.loadClass(CLOUDHSM_PROVIDER_CLASS);
-    } catch (final SecurityModuleException e) {
-      throw e;
-    } catch (final ClassNotFoundException e) {
-      throw new SecurityModuleException(
-          "CloudHSM JCE provider class not found in jars at " + CLOUDHSM_JAR_DIR, e);
+              + " or on the classpath."
+              + " Install the CloudHSM JCE provider package"
+              + " or copy the jar to Besu's plugins/ directory.",
+          e);
     }
   }
 
