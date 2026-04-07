@@ -16,8 +16,11 @@ package org.hyperledger.besu.plugin.services.securitymodule.hsm;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import org.hyperledger.besu.plugin.services.securitymodule.SecurityModuleException;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIf;
 
 class CloudHsmJceProviderTest {
 
@@ -49,10 +52,15 @@ class CloudHsmJceProviderTest {
         .hasMessageContaining("Public key alias");
   }
 
+  @DisabledIf("cloudHsmJarsPresent")
   @Test
-  void throwsWhenCloudHsmJarNotOnClasspath() {
+  void throwsWhenCloudHsmJarNotFound() {
     assertThatThrownBy(() -> new CloudHsmJceProvider("privkey", "pubkey"))
         .isInstanceOf(SecurityModuleException.class)
-        .hasMessageContaining("CloudHSM JCE provider jar not found");
+        .hasMessageContaining("CloudHSM JCE jar");
+  }
+
+  static boolean cloudHsmJarsPresent() {
+    return Files.isDirectory(Path.of("/opt/cloudhsm/java"));
   }
 }

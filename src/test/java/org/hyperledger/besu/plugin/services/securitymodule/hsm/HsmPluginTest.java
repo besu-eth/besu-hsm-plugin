@@ -55,7 +55,7 @@ class HsmPluginTest {
   @Test
   void registerRegistersSecurityModule() {
     hsmPlugin.register(serviceManager);
-    assertThat(securityModuleService.getByName("hsm")).isPresent();
+    assertThat(securityModuleService.getByName(HsmPlugin.SECURITY_MODULE_NAME)).isPresent();
   }
 
   @Test

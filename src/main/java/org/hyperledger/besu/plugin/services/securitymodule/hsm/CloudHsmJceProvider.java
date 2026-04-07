@@ -14,6 +14,7 @@
  */
 package org.hyperledger.besu.plugin.services.securitymodule.hsm;
 
+import java.io.IOException;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.DirectoryStream;
@@ -25,26 +26,32 @@ import java.security.Provider;
 import java.security.Security;
 import java.security.interfaces.ECPublicKey;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import org.hyperledger.besu.plugin.services.securitymodule.SecurityModuleException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * HSM provider that uses the AWS CloudHSM JCE provider. The CloudHSM JCE jar is auto-loaded from
- * {@code /opt/cloudhsm/java} if not already on the classpath.
+ * HSM provider that uses the AWS CloudHSM JCE provider. The CloudHSM JCE jar is loaded from the
+ * standard installation path {@code /opt/cloudhsm/java}.
  */
 class CloudHsmJceProvider implements HsmProvider {
   private static final Logger LOG = LoggerFactory.getLogger(CloudHsmJceProvider.class);
   private static final String CLOUDHSM_PROVIDER_CLASS =
       "com.amazonaws.cloudhsm.jce.provider.CloudHsmProvider";
-  private static final String CLOUDHSM_KEYSTORE_TYPE = "CloudHSM";
+  private static final String CLOUDHSM_KEYSTORE_TYPE_FIELD = "CLOUDHSM_KEYSTORE_TYPE";
   private static final Path CLOUDHSM_JAR_DIR = Path.of("/opt/cloudhsm/java");
-  private static final String CLOUDHSM_JAR_GLOB = "cloudhsm-jce-*.jar";
+  private static final String CLOUDHSM_JAR_GLOB = "cloudhsm-*.jar";
 
   private final Provider provider;
+  private final boolean ownsProvider;
+  private final String keystoreType;
   private final PrivateKey privateKey;
   private final ECPublicKey ecPublicKey;
+  private URLClassLoader cloudHsmClassLoader;
+
+  private record ProviderInit(Provider provider, boolean ownsProvider, String keystoreType) {}
 
   /**
    * Creates a new CloudHSM JCE provider, initializing the provider and loading keys from the HSM.
@@ -60,25 +67,35 @@ class CloudHsmJceProvider implements HsmProvider {
     if (publicKeyAlias == null || publicKeyAlias.isBlank()) {
       throw new SecurityModuleException("Public key alias must not be null or empty");
     }
-    this.provider = initializeProvider();
+    final ProviderInit init = initializeProvider();
+    this.provider = init.provider();
+    this.ownsProvider = init.ownsProvider();
+    this.keystoreType = init.keystoreType();
     final KeyStore keyStore = loadKeyStore();
     this.privateKey = loadPrivateKey(keyStore, privateKeyAlias);
     this.ecPublicKey = loadPublicKey(keyStore, publicKeyAlias);
   }
 
-  private Provider initializeProvider() {
+  private ProviderInit initializeProvider() {
     LOG.info("Initializing CloudHSM JCE provider ...");
     try {
       final Class<?> clazz = loadCloudHsmProviderClass();
-      final Provider cloudHsmProvider = (Provider) clazz.getDeclaredConstructor().newInstance();
-      if (Security.getProvider(cloudHsmProvider.getName()) == null) {
-        Security.addProvider(cloudHsmProvider);
+      final String keystoreType = (String) clazz.getField(CLOUDHSM_KEYSTORE_TYPE_FIELD).get(null);
+      final Provider newProvider = (Provider) clazz.getDeclaredConstructor().newInstance();
+      final Provider existingProvider = Security.getProvider(newProvider.getName());
+      if (existingProvider != null) {
+        LOG.info(
+            "Reusing already registered CloudHSM JCE provider: {} v{}",
+            existingProvider.getName(),
+            existingProvider.getVersionStr());
+        return new ProviderInit(existingProvider, false, keystoreType);
       }
+      Security.addProvider(newProvider);
       LOG.info(
           "CloudHSM JCE provider registered: {} v{}",
-          cloudHsmProvider.getName(),
-          cloudHsmProvider.getVersionStr());
-      return cloudHsmProvider;
+          newProvider.getName(),
+          newProvider.getVersionStr());
+      return new ProviderInit(newProvider, true, keystoreType);
     } catch (final SecurityModuleException e) {
       throw e;
     } catch (final Exception e) {
@@ -87,71 +104,62 @@ class CloudHsmJceProvider implements HsmProvider {
   }
 
   private Class<?> loadCloudHsmProviderClass() {
-    // First, try loading from default CloudHSM installation path (source of truth)
-    final List<Path> foundJars = findCloudHsmJars();
-    if (!foundJars.isEmpty()) {
-      try {
-        final URL[] jarUrls =
-            foundJars.stream()
-                .map(
-                    p -> {
-                      try {
-                        return p.toUri().toURL();
-                      } catch (final Exception e) {
-                        throw new SecurityModuleException(
-                            "Error converting jar path to URL: " + p, e);
-                      }
-                    })
-                .toArray(URL[]::new);
-
-        final URLClassLoader cloudHsmClassLoader =
-            new URLClassLoader(jarUrls, Thread.currentThread().getContextClassLoader());
-        LOG.info("Auto-loaded CloudHSM JCE jar from {}", foundJars.getFirst());
-        return cloudHsmClassLoader.loadClass(CLOUDHSM_PROVIDER_CLASS);
-      } catch (final SecurityModuleException e) {
-        throw e;
-      } catch (final ClassNotFoundException e) {
-        throw new SecurityModuleException(
-            "CloudHSM JCE provider class not found in jars at " + CLOUDHSM_JAR_DIR, e);
-      }
-    }
-
-    // Fall back to classpath (e.g., jar in Besu plugins/ directory)
-    LOG.debug(
-        "CloudHSM JCE jars not found in {}, attempting to load from classpath", CLOUDHSM_JAR_DIR);
+    final Path jar = findCloudHsmJar();
     try {
-      return Class.forName(CLOUDHSM_PROVIDER_CLASS);
+      final URL jarUrl = jar.toUri().toURL();
+      this.cloudHsmClassLoader =
+          new URLClassLoader(new URL[] {jarUrl}, Thread.currentThread().getContextClassLoader());
+      LOG.info("Loaded CloudHSM JCE jar: {}", jar);
+      return cloudHsmClassLoader.loadClass(CLOUDHSM_PROVIDER_CLASS);
     } catch (final ClassNotFoundException e) {
-      throw new SecurityModuleException(
-          "CloudHSM JCE provider jar not found in "
-              + CLOUDHSM_JAR_DIR
-              + " or on the classpath."
-              + " Install the CloudHSM JCE provider package"
-              + " or copy the jar to Besu's plugins/ directory.",
-          e);
+      throw new SecurityModuleException("CloudHSM JCE provider class not found in jar: " + jar, e);
+    } catch (final Exception e) {
+      throw new SecurityModuleException("Error loading CloudHSM JCE jar: " + jar, e);
     }
   }
 
-  private static List<Path> findCloudHsmJars() {
-    final List<Path> jars = new ArrayList<>();
+  private static Path findCloudHsmJar() {
     if (!Files.isDirectory(CLOUDHSM_JAR_DIR)) {
-      return jars;
+      throw new SecurityModuleException(
+          "CloudHSM JCE jar directory not found: "
+              + CLOUDHSM_JAR_DIR
+              + ". Install the CloudHSM JCE provider package:"
+              + " https://docs.aws.amazon.com/cloudhsm/latest/userguide/java-library-install_5.html");
     }
+    final List<Path> jars = new ArrayList<>();
     try (final DirectoryStream<Path> stream =
         Files.newDirectoryStream(CLOUDHSM_JAR_DIR, CLOUDHSM_JAR_GLOB)) {
       for (final Path jar : stream) {
         jars.add(jar);
       }
     } catch (final Exception e) {
-      LOG.warn("Error scanning for CloudHSM JCE jars in {}: {}", CLOUDHSM_JAR_DIR, e.getMessage());
+      throw new SecurityModuleException(
+          "Error scanning for CloudHSM JCE jars in " + CLOUDHSM_JAR_DIR, e);
     }
-    return jars;
+    if (jars.isEmpty()) {
+      throw new SecurityModuleException(
+          "No CloudHSM JCE jars matching '"
+              + CLOUDHSM_JAR_GLOB
+              + "' found in "
+              + CLOUDHSM_JAR_DIR
+              + ". Install the CloudHSM JCE provider package:"
+              + " https://docs.aws.amazon.com/cloudhsm/latest/userguide/java-library-install_5.html");
+    }
+    jars.sort(Comparator.comparing(Path::getFileName).reversed());
+    if (jars.size() > 1) {
+      LOG.warn(
+          "Multiple CloudHSM JCE jars found in {}: {}. Using: {}",
+          CLOUDHSM_JAR_DIR,
+          jars,
+          jars.getFirst());
+    }
+    return jars.getFirst();
   }
 
   private KeyStore loadKeyStore() {
     LOG.info("Loading CloudHSM keystore ...");
     try {
-      final KeyStore keyStore = KeyStore.getInstance(CLOUDHSM_KEYSTORE_TYPE);
+      final KeyStore keyStore = KeyStore.getInstance(keystoreType);
       keyStore.load(null, null);
       return keyStore;
     } catch (final Exception e) {
@@ -197,7 +205,16 @@ class CloudHsmJceProvider implements HsmProvider {
 
   @Override
   public void removeProvider() {
-    Security.removeProvider(provider.getName());
+    if (ownsProvider) {
+      Security.removeProvider(provider.getName());
+    }
+    if (cloudHsmClassLoader != null) {
+      try {
+        cloudHsmClassLoader.close();
+      } catch (final IOException e) {
+        LOG.warn("Error closing CloudHSM classloader: {}", e.getMessage());
+      }
+    }
   }
 
   @Override

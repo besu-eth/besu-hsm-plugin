@@ -153,10 +153,10 @@ besu --security-module=hsm \
 ## Experimental: secp256r1 Curve Support
 
 The plugin supports the secp256r1 (NIST P-256) elliptic curve as an alternative to the default
-secp256k1. This is controlled by the `--plugin-pkcs11-hsm-ec-curve` CLI option:
+secp256k1. This is controlled by the `--plugin-hsm-ec-curve` CLI option:
 
 ```shell
---plugin-pkcs11-hsm-ec-curve=secp256r1
+--plugin-hsm-ec-curve=secp256r1
 ```
 
 Besu itself must also be configured to use secp256r1 via the `ecCurve` field in the genesis file.
