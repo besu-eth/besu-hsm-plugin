@@ -21,7 +21,6 @@ import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.PrivateKey;
 import java.security.Provider;
-import java.security.Security;
 import java.security.interfaces.ECPublicKey;
 import java.security.spec.ECGenParameterSpec;
 import javax.crypto.KeyAgreement;
@@ -30,7 +29,6 @@ import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.hyperledger.besu.plugin.services.securitymodule.SecurityModuleException;
 import org.hyperledger.besu.plugin.services.securitymodule.data.PublicKey;
 import org.hyperledger.besu.plugin.services.securitymodule.data.Signature;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -48,7 +46,6 @@ class HsmSecurityModuleCryptoTest {
   @BeforeAll
   static void setUp() throws Exception {
     provider = new BouncyCastleProvider();
-    Security.addProvider(provider);
 
     final KeyPairGenerator kpg = KeyPairGenerator.getInstance("EC", provider);
 
@@ -61,11 +58,6 @@ class HsmSecurityModuleCryptoTest {
     final KeyPair r1KeyPair = kpg.generateKeyPair();
     r1PrivateKey = r1KeyPair.getPrivate();
     r1PublicKey = (ECPublicKey) r1KeyPair.getPublic();
-  }
-
-  @AfterAll
-  static void removeProvider() {
-    Security.removeProvider(provider.getName());
   }
 
   // -- secp256k1 tests --
