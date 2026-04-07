@@ -18,7 +18,6 @@ import java.io.ByteArrayOutputStream;
 import java.math.BigInteger;
 import java.security.KeyFactory;
 import java.security.NoSuchAlgorithmException;
-import java.security.NoSuchProviderException;
 import java.security.spec.ECPoint;
 import java.security.spec.ECPublicKeySpec;
 import java.security.spec.InvalidKeySpecException;
@@ -28,6 +27,7 @@ import org.bouncycastle.asn1.ASN1Integer;
 import org.bouncycastle.asn1.ASN1OutputStream;
 import org.bouncycastle.asn1.DERSequence;
 import org.bouncycastle.asn1.DLSequence;
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.hyperledger.besu.plugin.services.securitymodule.SecurityModuleException;
 import org.hyperledger.besu.plugin.services.securitymodule.data.Signature;
 
@@ -38,9 +38,15 @@ import org.hyperledger.besu.plugin.services.securitymodule.data.Signature;
 final class SignatureUtil {
 
   private final EcCurveParameters curveParams;
+  private final KeyFactory ecKeyFactory;
 
   SignatureUtil(final EcCurveParameters curveParams) {
     this.curveParams = curveParams;
+    try {
+      this.ecKeyFactory = KeyFactory.getInstance("EC", new BouncyCastleProvider());
+    } catch (final NoSuchAlgorithmException e) {
+      throw new SecurityModuleException("EC KeyFactory not available from BC provider", e);
+    }
   }
 
   Signature extractRAndS(final byte[] signatureBytes, final boolean isP1363) {
@@ -123,9 +129,8 @@ final class SignatureUtil {
 
   java.security.PublicKey ecPointToJcePublicKey(final ECPoint ecPoint) {
     try {
-      return KeyFactory.getInstance("EC", "BC")
-          .generatePublic(new ECPublicKeySpec(ecPoint, curveParams.getParamSpec()));
-    } catch (final InvalidKeySpecException | NoSuchAlgorithmException | NoSuchProviderException e) {
+      return ecKeyFactory.generatePublic(new ECPublicKeySpec(ecPoint, curveParams.getParamSpec()));
+    } catch (final InvalidKeySpecException e) {
       throw new SecurityModuleException("Error converting ECPoint to PublicKey", e);
     }
   }
