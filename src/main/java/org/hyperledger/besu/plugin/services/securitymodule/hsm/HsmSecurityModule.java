@@ -26,7 +26,7 @@ import org.slf4j.LoggerFactory;
  * {@link SecurityModule} implementation that delegates cryptographic operations (signing, ECDH) to
  * a configured {@link HsmProvider}. Supports both generic PKCS#11 tokens and AWS CloudHSM JCE.
  */
-public class HsmSecurityModule implements SecurityModule {
+public class HsmSecurityModule implements SecurityModule, AutoCloseable {
   private static final Logger LOG = LoggerFactory.getLogger(HsmSecurityModule.class);
 
   private final HsmProvider hsmProvider;
@@ -74,7 +74,8 @@ public class HsmSecurityModule implements SecurityModule {
     return hsmProvider.calculateECDHKeyAgreement(partyKey);
   }
 
-  void removeProvider() {
+  @Override
+  public void close() {
     hsmProvider.close();
   }
 }

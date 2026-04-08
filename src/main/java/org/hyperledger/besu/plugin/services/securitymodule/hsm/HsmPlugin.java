@@ -70,7 +70,7 @@ public class HsmPlugin implements BesuPlugin {
   public void stop() {
     LOG.debug("Stopping HSM plugin ...");
     if (module != null) {
-      module.removeProvider();
+      module.close();
     }
   }
 }
