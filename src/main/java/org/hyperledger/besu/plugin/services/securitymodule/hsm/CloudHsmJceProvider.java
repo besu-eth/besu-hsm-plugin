@@ -43,24 +43,20 @@ class CloudHsmJceProvider extends JcaHsmProvider {
   private static final Logger LOG = LoggerFactory.getLogger(CloudHsmJceProvider.class);
   private static final String CLOUDHSM_PROVIDER_CLASS =
       "com.amazonaws.cloudhsm.jce.provider.CloudHsmProvider";
-  private static final String CLOUDHSM_PROVIDER_NAME_FIELD = "PROVIDER_NAME";
-  private static final String CLOUDHSM_KEYSTORE_TYPE_FIELD = "CLOUDHSM_KEYSTORE_TYPE";
+
+  // Value of CloudHsmProvider.CLOUDHSM_KEYSTORE_TYPE as documented in the AWS CloudHSM JCE
+  // javadoc (v5.17.1). Hardcoded to avoid reflection on the dynamically loaded class.
+  private static final String CLOUDHSM_KEYSTORE_TYPE = "CloudHSM";
   private static final String CLOUDHSM_JAR_GLOB = "cloudhsm-*.jar";
 
   private final Provider provider;
-  private final boolean preRegisteredProvider;
   private URLClassLoader cloudHsmClassLoader;
 
   /**
-   * Bundles the results of JCE provider initialization: the resolved {@link Provider}, whether it
-   * was already registered in the JCA runtime, the CloudHSM keystore type, and the classloader used
-   * to load the provider jar.
+   * Bundles the results of JCE provider initialization: the resolved {@link Provider} and the
+   * classloader used to load the provider jar.
    */
-  private record ProviderInit(
-      Provider provider,
-      boolean preRegisteredProvider,
-      String keystoreType,
-      URLClassLoader classLoader) {}
+  private record ProviderInit(Provider provider, URLClassLoader classLoader) {}
 
   /**
    * Bundles all artifacts produced during full provider + key initialization so they can be passed
@@ -68,8 +64,6 @@ class CloudHsmJceProvider extends JcaHsmProvider {
    */
   private record InitResult(
       Provider provider,
-      boolean preRegisteredProvider,
-      String keystoreType,
       PrivateKey privateKey,
       ECPublicKey ecPublicKey,
       URLClassLoader classLoader) {}
@@ -106,7 +100,6 @@ class CloudHsmJceProvider extends JcaHsmProvider {
   private CloudHsmJceProvider(final InitResult result, final EcCurveParameters curveParams) {
     super(result.provider(), result.privateKey(), result.ecPublicKey(), curveParams);
     this.provider = result.provider();
-    this.preRegisteredProvider = result.preRegisteredProvider();
     this.cloudHsmClassLoader = result.classLoader();
   }
 
@@ -114,19 +107,14 @@ class CloudHsmJceProvider extends JcaHsmProvider {
       final Path jarPath, final String privateKeyAlias, final String publicKeyAlias) {
     final ProviderInit providerInit =
         initializeProvider(requireNonNull(jarPath, "jarPath must not be null"));
-    final KeyStore keyStore = loadKeyStore(providerInit.keystoreType());
+    final KeyStore keyStore = loadKeyStore();
     final PrivateKey privateKey =
         loadPrivateKey(
             keyStore, requireNonNull(privateKeyAlias, "privateKeyAlias must not be null"));
     final ECPublicKey ecPublicKey =
         loadPublicKey(keyStore, requireNonNull(publicKeyAlias, "publicKeyAlias must not be null"));
     return new InitResult(
-        providerInit.provider(),
-        providerInit.preRegisteredProvider(),
-        providerInit.keystoreType(),
-        privateKey,
-        ecPublicKey,
-        providerInit.classLoader());
+        providerInit.provider(), privateKey, ecPublicKey, providerInit.classLoader());
   }
 
   private static ProviderInit initializeProvider(final Path jarPath) {
@@ -138,23 +126,15 @@ class CloudHsmJceProvider extends JcaHsmProvider {
           new URLClassLoader(new URL[] {jarUrl}, Thread.currentThread().getContextClassLoader());
       LOG.info("Loaded CloudHSM JCE jar: {}", jar);
       final Class<?> clazz = classLoader.loadClass(CLOUDHSM_PROVIDER_CLASS);
-      final String keystoreType = (String) clazz.getField(CLOUDHSM_KEYSTORE_TYPE_FIELD).get(null);
-      final String providerName = (String) clazz.getField(CLOUDHSM_PROVIDER_NAME_FIELD).get(null);
-      final Provider existingProvider = Security.getProvider(providerName);
-      if (existingProvider != null) {
-        LOG.info(
-            "Reusing already registered CloudHSM JCE provider: {} v{}",
-            existingProvider.getName(),
-            existingProvider.getVersionStr());
-        return new ProviderInit(existingProvider, true, keystoreType, classLoader);
-      }
+      // addProvider is a no-op if a provider with the same name is already registered.
+      // In the Besu plugin context, this plugin is the sole registrant of the CloudHSM provider.
       final Provider newProvider = (Provider) clazz.getDeclaredConstructor().newInstance();
       Security.addProvider(newProvider);
       LOG.info(
           "CloudHSM JCE provider registered: {} v{}",
           newProvider.getName(),
           newProvider.getVersionStr());
-      return new ProviderInit(newProvider, false, keystoreType, classLoader);
+      return new ProviderInit(newProvider, classLoader);
     } catch (final SecurityModuleException e) {
       throw e;
     } catch (final Exception e) {
@@ -200,10 +180,10 @@ class CloudHsmJceProvider extends JcaHsmProvider {
     return jars.getFirst();
   }
 
-  private static KeyStore loadKeyStore(final String keystoreType) {
+  private static KeyStore loadKeyStore() {
     LOG.info("Loading CloudHSM keystore ...");
     try {
-      final KeyStore keyStore = KeyStore.getInstance(keystoreType);
+      final KeyStore keyStore = KeyStore.getInstance(CLOUDHSM_KEYSTORE_TYPE);
       keyStore.load(null, null);
       return keyStore;
     } catch (final Exception e) {
@@ -249,9 +229,9 @@ class CloudHsmJceProvider extends JcaHsmProvider {
 
   @Override
   public void close() {
-    if (!preRegisteredProvider) {
-      Security.removeProvider(provider.getName());
-    }
+    // Safe to always remove: this plugin is the sole registrant, and close() is only called
+    // during Besu shutdown (HsmPlugin.stop()).
+    Security.removeProvider(provider.getName());
     if (cloudHsmClassLoader != null) {
       try {
         cloudHsmClassLoader.close();
