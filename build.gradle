@@ -106,6 +106,7 @@ tasks.register('integrationTest', Test) {
   testClassesDirs = sourceSets.integrationTest.output.classesDirs
   classpath = sourceSets.integrationTest.runtimeClasspath
   dependsOn distZip
+  distZip.outputs.upToDateWhen { false }
   useJUnitPlatform()
   outputs.upToDateWhen { false } // Always re-run; Docker container state is not tracked by Gradle
 }
