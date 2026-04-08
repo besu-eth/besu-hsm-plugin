@@ -43,16 +43,17 @@ class CloudHsmJceProvider extends JcaHsmProvider {
   private static final Logger LOG = LoggerFactory.getLogger(CloudHsmJceProvider.class);
   private static final String CLOUDHSM_PROVIDER_CLASS =
       "com.amazonaws.cloudhsm.jce.provider.CloudHsmProvider";
+  private static final String CLOUDHSM_PROVIDER_NAME_FIELD = "PROVIDER_NAME";
   private static final String CLOUDHSM_KEYSTORE_TYPE_FIELD = "CLOUDHSM_KEYSTORE_TYPE";
   private static final String CLOUDHSM_JAR_GLOB = "cloudhsm-*.jar";
 
   private final Provider provider;
-  private final boolean ownsProvider;
+  private final boolean preRegisteredProvider;
   private URLClassLoader cloudHsmClassLoader;
 
   private record InitResult(
       Provider provider,
-      boolean ownsProvider,
+      boolean preRegisteredProvider,
       String keystoreType,
       PrivateKey privateKey,
       ECPublicKey ecPublicKey,
@@ -90,7 +91,7 @@ class CloudHsmJceProvider extends JcaHsmProvider {
   private CloudHsmJceProvider(final InitResult result, final EcCurveParameters curveParams) {
     super(result.provider(), result.privateKey(), result.ecPublicKey(), curveParams);
     this.provider = result.provider();
-    this.ownsProvider = result.ownsProvider();
+    this.preRegisteredProvider = result.preRegisteredProvider();
     this.cloudHsmClassLoader = result.classLoader();
   }
 
@@ -106,7 +107,7 @@ class CloudHsmJceProvider extends JcaHsmProvider {
         loadPublicKey(keyStore, requireNonNull(publicKeyAlias, "publicKeyAlias must not be null"));
     return new InitResult(
         providerInit.provider(),
-        providerInit.ownsProvider(),
+        providerInit.preRegisteredProvider(),
         providerInit.keystoreType(),
         privateKey,
         ecPublicKey,
@@ -114,7 +115,10 @@ class CloudHsmJceProvider extends JcaHsmProvider {
   }
 
   private record ProviderInit(
-      Provider provider, boolean ownsProvider, String keystoreType, URLClassLoader classLoader) {}
+      Provider provider,
+      boolean preRegisteredProvider,
+      String keystoreType,
+      URLClassLoader classLoader) {}
 
   private static ProviderInit initializeProvider(final Path jarPath) {
     LOG.info("Initializing CloudHSM JCE provider ...");
@@ -126,21 +130,22 @@ class CloudHsmJceProvider extends JcaHsmProvider {
       LOG.info("Loaded CloudHSM JCE jar: {}", jar);
       final Class<?> clazz = classLoader.loadClass(CLOUDHSM_PROVIDER_CLASS);
       final String keystoreType = (String) clazz.getField(CLOUDHSM_KEYSTORE_TYPE_FIELD).get(null);
-      final Provider newProvider = (Provider) clazz.getDeclaredConstructor().newInstance();
-      final Provider existingProvider = Security.getProvider(newProvider.getName());
+      final String providerName = (String) clazz.getField(CLOUDHSM_PROVIDER_NAME_FIELD).get(null);
+      final Provider existingProvider = Security.getProvider(providerName);
       if (existingProvider != null) {
         LOG.info(
             "Reusing already registered CloudHSM JCE provider: {} v{}",
             existingProvider.getName(),
             existingProvider.getVersionStr());
-        return new ProviderInit(existingProvider, false, keystoreType, classLoader);
+        return new ProviderInit(existingProvider, true, keystoreType, classLoader);
       }
+      final Provider newProvider = (Provider) clazz.getDeclaredConstructor().newInstance();
       Security.addProvider(newProvider);
       LOG.info(
           "CloudHSM JCE provider registered: {} v{}",
           newProvider.getName(),
           newProvider.getVersionStr());
-      return new ProviderInit(newProvider, true, keystoreType, classLoader);
+      return new ProviderInit(newProvider, false, keystoreType, classLoader);
     } catch (final SecurityModuleException e) {
       throw e;
     } catch (final Exception e) {
@@ -235,7 +240,7 @@ class CloudHsmJceProvider extends JcaHsmProvider {
 
   @Override
   public void close() {
-    if (ownsProvider) {
+    if (!preRegisteredProvider) {
       Security.removeProvider(provider.getName());
     }
     if (cloudHsmClassLoader != null) {
