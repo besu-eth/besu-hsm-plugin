@@ -49,7 +49,6 @@ class CloudHsmJceProvider extends JcaHsmProvider {
   private static final String CLOUDHSM_KEYSTORE_TYPE = "CloudHSM";
   private static final String CLOUDHSM_JAR_GLOB = "cloudhsm-*.jar";
 
-  private final Provider provider;
   private final URLClassLoader cloudHsmClassLoader;
 
   /**
@@ -99,7 +98,6 @@ class CloudHsmJceProvider extends JcaHsmProvider {
 
   private CloudHsmJceProvider(final InitResult result, final EcCurveParameters curveParams) {
     super(result.provider(), result.privateKey(), result.ecPublicKey(), curveParams);
-    this.provider = result.provider();
     this.cloudHsmClassLoader = result.classLoader();
   }
 
@@ -230,9 +228,7 @@ class CloudHsmJceProvider extends JcaHsmProvider {
 
   @Override
   public void close() {
-    // Safe to always remove: this plugin is the sole registrant, and close() is only called
-    // during Besu shutdown (HsmPlugin.stop()).
-    Security.removeProvider(provider.getName());
+    super.close();
     if (cloudHsmClassLoader != null) {
       try {
         cloudHsmClassLoader.close();

@@ -39,8 +39,6 @@ import org.slf4j.LoggerFactory;
 class Pkcs11Provider extends JcaHsmProvider {
   private static final Logger LOG = LoggerFactory.getLogger(Pkcs11Provider.class);
 
-  private final Provider provider;
-
   /**
    * Bundles all artifacts produced during PKCS#11 provider + key initialization so they can be
    * passed to the delegating constructor that calls {@code super()}.
@@ -79,7 +77,6 @@ class Pkcs11Provider extends JcaHsmProvider {
 
   private Pkcs11Provider(final InitResult result, final EcCurveParameters curveParams) {
     super(result.provider(), result.privateKey(), result.ecPublicKey(), curveParams);
-    this.provider = result.provider();
   }
 
   private static InitResult init(
@@ -173,10 +170,5 @@ class Pkcs11Provider extends JcaHsmProvider {
     } catch (final Exception e) {
       throw new SecurityModuleException("Error loading public key for alias: " + alias, e);
     }
-  }
-
-  @Override
-  public void close() {
-    Security.removeProvider(provider.getName());
   }
 }

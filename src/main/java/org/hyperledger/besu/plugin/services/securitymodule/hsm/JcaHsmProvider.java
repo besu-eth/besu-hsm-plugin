@@ -20,6 +20,7 @@ import com.google.common.annotations.VisibleForTesting;
 import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
 import java.security.Provider;
+import java.security.Security;
 import java.security.Signature;
 import java.security.interfaces.ECPublicKey;
 import java.security.spec.ECParameterSpec;
@@ -39,7 +40,7 @@ abstract class JcaHsmProvider implements HsmProvider {
   private static final Logger LOG = LoggerFactory.getLogger(JcaHsmProvider.class);
   private static final String KEY_AGREEMENT_ALGORITHM = "ECDH";
 
-  private final Provider provider;
+  protected final Provider provider;
   private final PrivateKey privateKey;
   private final PublicKey publicKey;
   private final String signatureAlgorithm;
@@ -127,6 +128,13 @@ abstract class JcaHsmProvider implements HsmProvider {
       return Bytes32.wrap(keyAgreement.generateSecret());
     } catch (final Exception e) {
       throw new SecurityModuleException("Error calculating ECDH key agreement", e);
+    }
+  }
+
+  @Override
+  public void close() {
+    if (provider != null) {
+      Security.removeProvider(provider.getName());
     }
   }
 }
