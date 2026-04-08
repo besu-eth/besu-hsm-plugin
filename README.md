@@ -128,6 +128,25 @@ besu --security-module=hsm \
   --plugin-hsm-key-alias=mykey
 ```
 
+> **Certificate requirement:** Java's SunPKCS11 `KeyStore` retrieves the public key via the
+> certificate associated with the key alias (`KeyStore.getCertificate()`). The HSM must have a
+> certificate stored alongside the private key — a self-signed certificate is sufficient.
+
+> **ECDH key agreement:** Besu uses ECDH for devp2p handshakes. For this to work through
+> SunPKCS11, the PKCS#11 configuration file must allow Java to extract the derived shared secret.
+> Add the following to your configuration file:
+>
+> ```
+> attributes(generate,CKO_SECRET_KEY,CKK_GENERIC_SECRET) = {
+>   CKA_SENSITIVE = false
+>   CKA_EXTRACTABLE = true
+> }
+> ```
+>
+> See [`docker/softhsm2/config/pkcs11-softhsm.cfg`](docker/softhsm2/config/pkcs11-softhsm.cfg)
+> for a complete example. Some HSMs (e.g., AWS CloudHSM) do not allow these attributes — use the
+> `cloudhsm-jce` provider type instead.
+
 ### AWS CloudHSM JCE Example
 
 The `cloudhsm-jce` provider uses the [AWS CloudHSM JCE provider](https://docs.aws.amazon.com/cloudhsm/latest/userguide/java-library-install.html)
