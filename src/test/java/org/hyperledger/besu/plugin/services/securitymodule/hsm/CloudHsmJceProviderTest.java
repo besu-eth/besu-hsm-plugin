@@ -18,11 +18,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
 import org.hyperledger.besu.plugin.services.securitymodule.SecurityModuleException;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.DisabledIf;
 
 class CloudHsmJceProviderTest {
 
@@ -34,6 +32,7 @@ class CloudHsmJceProviderTest {
     when(options.getProviderType()).thenReturn(HsmCliOptions.HsmProviderType.CLOUDHSM_JCE);
     when(options.getPrivateKeyAlias()).thenReturn(privateKeyAlias);
     when(options.getPublicKeyAlias()).thenReturn(publicKeyAlias);
+    when(options.getCloudHsmJarPath()).thenReturn(Path.of("/nonexistent/path"));
     return options;
   }
 
@@ -69,16 +68,20 @@ class CloudHsmJceProviderTest {
         .hasMessageContaining("Public key alias");
   }
 
-  @DisabledIf("cloudHsmJarsPresent")
   @Test
-  void throwsWhenCloudHsmJarNotFound() {
+  void throwsWhenCloudHsmJarPathNotFound() {
     final HsmCliOptions options = mockCloudHsmOptions("privkey", "pubkey");
     assertThatThrownBy(() -> CloudHsmJceProvider.create(options, SECP256K1))
         .isInstanceOf(SecurityModuleException.class)
-        .hasMessageContaining("CloudHSM JCE jar");
+        .hasMessageContaining("CloudHSM JCE jar path not found");
   }
 
-  static boolean cloudHsmJarsPresent() {
-    return Files.isDirectory(Path.of("/opt/cloudhsm/java"));
+  @Test
+  void throwsWhenCloudHsmJarFileNotFound() {
+    final HsmCliOptions options = mockCloudHsmOptions("privkey", "pubkey");
+    when(options.getCloudHsmJarPath()).thenReturn(Path.of("/nonexistent/cloudhsm-jce-5.0.jar"));
+    assertThatThrownBy(() -> CloudHsmJceProvider.create(options, SECP256K1))
+        .isInstanceOf(SecurityModuleException.class)
+        .hasMessageContaining("CloudHSM JCE jar path not found");
   }
 }

@@ -72,6 +72,7 @@ class HsmSecurityModuleTest {
   void cloudHsmJceRejectsNullKeyAlias() {
     final HsmCliOptions options = mockOptions(HsmCliOptions.HsmProviderType.CLOUDHSM_JCE);
     when(options.getPrivateKeyAlias()).thenReturn(null);
+    when(options.getCloudHsmJarPath()).thenReturn(Path.of("/nonexistent/path"));
 
     assertThatThrownBy(() -> new HsmSecurityModule(options))
         .isInstanceOf(SecurityModuleException.class)
@@ -83,6 +84,7 @@ class HsmSecurityModuleTest {
     final HsmCliOptions options = mockOptions(HsmCliOptions.HsmProviderType.CLOUDHSM_JCE);
     when(options.getPrivateKeyAlias()).thenReturn("mykey");
     when(options.getPublicKeyAlias()).thenReturn(null);
+    when(options.getCloudHsmJarPath()).thenReturn(Path.of("/nonexistent/path"));
 
     assertThatThrownBy(() -> new HsmSecurityModule(options))
         .isInstanceOf(SecurityModuleException.class)

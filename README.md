@@ -116,6 +116,7 @@ The plugin registers the following CLI options with Besu:
 | `--plugin-hsm-password-path` | Path to the file containing the token PIN/password | `generic-pkcs11` only |
 | `--plugin-hsm-key-alias` | Alias/label of the private key on the HSM | Yes |
 | `--plugin-hsm-public-key-alias` | Alias/label of the public key on the HSM | `cloudhsm-jce` only |
+| `--plugin-hsm-cloudhsm-jar-path` | Path to CloudHSM JCE jar file or directory (default: `/opt/cloudhsm/java`) | No |
 | `--plugin-hsm-ec-curve` | EC curve: `secp256k1` (default) or `secp256r1` | No |
 
 ### Generic PKCS#11 Example
@@ -130,8 +131,9 @@ besu --security-module=hsm \
 ### AWS CloudHSM JCE Example
 
 The `cloudhsm-jce` provider uses the [AWS CloudHSM JCE provider](https://docs.aws.amazon.com/cloudhsm/latest/userguide/java-library-install.html)
-directly rather than going through a PKCS#11 library. The CloudHSM JCE jar is auto-loaded from
-`/opt/cloudhsm/java/` if it is not already on the classpath.
+directly rather than going through a PKCS#11 library. The CloudHSM JCE jar is auto-discovered from
+`/opt/cloudhsm/java/` by default. Use `--plugin-hsm-cloudhsm-jar-path` to override with a custom
+directory or a direct path to the jar file.
 
 Authentication is handled via the `HSM_USER` and `HSM_PASSWORD` environment variables (or
 equivalent system properties) as documented by AWS.

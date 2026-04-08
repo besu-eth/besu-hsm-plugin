@@ -56,6 +56,14 @@ public class HsmCliOptions {
   private String publicKeyAlias;
 
   @Option(
+      names = "--plugin-" + SECURITY_MODULE_NAME + "-cloudhsm-jar-path",
+      description =
+          "Path to CloudHSM JCE jar file or directory containing it"
+              + " (default: ${DEFAULT-VALUE})",
+      paramLabel = "<path>")
+  private Path cloudHsmJarPath = Path.of("/opt/cloudhsm/java");
+
+  @Option(
       names = "--plugin-" + SECURITY_MODULE_NAME + "-ec-curve",
       description = "Elliptic curve name: ${COMPLETION-CANDIDATES} (default: ${DEFAULT-VALUE})",
       paramLabel = "<curve>")
@@ -116,6 +124,11 @@ public class HsmCliOptions {
   /** Returns the alias/label of the public key on the HSM (used by CloudHSM JCE provider). */
   public String getPublicKeyAlias() {
     return publicKeyAlias;
+  }
+
+  /** Returns the path to the CloudHSM JCE jar file or directory. */
+  public Path getCloudHsmJarPath() {
+    return cloudHsmJarPath;
   }
 
   /** Returns the EC curve name (e.g. "secp256k1", "secp256r1"). */
