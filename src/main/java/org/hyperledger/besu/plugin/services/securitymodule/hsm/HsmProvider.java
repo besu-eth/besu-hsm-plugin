@@ -24,7 +24,7 @@ import org.hyperledger.besu.plugin.services.securitymodule.data.Signature;
  * mechanism. This allows new provider types (e.g., REST-based KMS) to be added without modifying
  * {@link HsmSecurityModule}.
  */
-interface HsmProvider {
+interface HsmProvider extends AutoCloseable {
 
   /**
    * Signs the given data hash using the HSM-managed private key.
@@ -52,5 +52,6 @@ interface HsmProvider {
   /**
    * Releases any resources held by this provider (JCA provider registration, classloaders, etc).
    */
+  @Override
   void close();
 }
