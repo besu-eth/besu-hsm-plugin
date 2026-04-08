@@ -96,9 +96,11 @@ class CloudHsmJceProvider extends JcaHsmProvider {
     final ProviderInit providerInit = initializeProvider();
     final KeyStore keyStore = loadKeyStore(providerInit.keystoreType());
     final PrivateKey privateKey =
-        loadPrivateKey(keyStore, Objects.requireNonNull(privateKeyAlias, "privateKeyAlias"));
+        loadPrivateKey(
+            keyStore, Objects.requireNonNull(privateKeyAlias, "privateKeyAlias must not be null"));
     final ECPublicKey ecPublicKey =
-        loadPublicKey(keyStore, Objects.requireNonNull(publicKeyAlias, "publicKeyAlias"));
+        loadPublicKey(
+            keyStore, Objects.requireNonNull(publicKeyAlias, "publicKeyAlias must not be null"));
     return new InitResult(
         providerInit.provider(),
         providerInit.ownsProvider(),

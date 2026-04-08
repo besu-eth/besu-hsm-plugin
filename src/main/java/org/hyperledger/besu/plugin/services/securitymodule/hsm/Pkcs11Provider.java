@@ -82,11 +82,13 @@ class Pkcs11Provider extends JcaHsmProvider {
 
   private static InitResult init(
       final Path configPath, final Path passwordPath, final String keyAlias) {
-    final Provider provider = initializeProvider(Objects.requireNonNull(configPath, "configPath"));
+    final Provider provider =
+        initializeProvider(Objects.requireNonNull(configPath, "configPath must not be null"));
     final KeyStore keyStore =
-        loadKeyStore(provider, Objects.requireNonNull(passwordPath, "passwordPath"));
+        loadKeyStore(
+            provider, Objects.requireNonNull(passwordPath, "passwordPath must not be null"));
     final PrivateKey privateKey =
-        loadPrivateKey(keyStore, Objects.requireNonNull(keyAlias, "keyAlias"));
+        loadPrivateKey(keyStore, Objects.requireNonNull(keyAlias, "keyAlias must not be null"));
     final ECPublicKey ecPublicKey = loadPublicKey(keyStore, keyAlias);
     return new InitResult(provider, privateKey, ecPublicKey);
   }
