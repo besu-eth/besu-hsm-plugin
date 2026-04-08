@@ -18,6 +18,7 @@ import java.io.ByteArrayOutputStream;
 import java.math.BigInteger;
 import java.security.KeyFactory;
 import java.security.NoSuchAlgorithmException;
+import java.security.PublicKey;
 import java.security.spec.ECPoint;
 import java.security.spec.ECPublicKeySpec;
 import java.security.spec.InvalidKeySpecException;
@@ -127,7 +128,7 @@ final class SignatureUtil {
     }
   }
 
-  java.security.PublicKey ecPointToJcePublicKey(final ECPoint ecPoint) {
+  PublicKey ecPointToJcePublicKey(final ECPoint ecPoint) {
     try {
       return ecKeyFactory.generatePublic(new ECPublicKeySpec(ecPoint, curveParams.getParamSpec()));
     } catch (final InvalidKeySpecException e) {

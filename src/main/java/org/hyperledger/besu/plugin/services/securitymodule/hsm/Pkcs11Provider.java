@@ -141,12 +141,12 @@ class Pkcs11Provider extends JcaHsmProvider {
   private static PrivateKey loadPrivateKey(final KeyStore keyStore, final String alias) {
     LOG.info("Loading private key for alias: {} ...", alias);
     try {
-      final java.security.Key key = keyStore.getKey(alias, new char[0]);
-      if (!(key instanceof PrivateKey)) {
-        throw new SecurityModuleException(
-            "Key loaded for alias is not a PrivateKey. Alias: " + alias);
+      if (keyStore.getKey(alias, new char[0]) instanceof PrivateKey key) {
+        return key;
       }
-      return (PrivateKey) key;
+
+      throw new SecurityModuleException(
+          "Key loaded for alias is not a PrivateKey. Alias: " + alias);
     } catch (final SecurityModuleException e) {
       throw e;
     } catch (final Exception e) {
@@ -161,12 +161,13 @@ class Pkcs11Provider extends JcaHsmProvider {
       if (certificate == null) {
         throw new SecurityModuleException("Certificate not found for alias: " + alias);
       }
-      final java.security.PublicKey publicKey = certificate.getPublicKey();
-      if (!(publicKey instanceof ECPublicKey)) {
-        throw new SecurityModuleException(
-            "Public key loaded is not an ECPublicKey for alias: " + alias);
+
+      if (certificate.getPublicKey() instanceof ECPublicKey publicKey) {
+        return publicKey;
       }
-      return (ECPublicKey) publicKey;
+
+      throw new SecurityModuleException(
+          "Public key loaded is not an ECPublicKey for alias: " + alias);
     } catch (final SecurityModuleException e) {
       throw e;
     } catch (final Exception e) {

@@ -120,12 +120,10 @@ abstract class JcaHsmProvider implements HsmProvider {
   @Override
   public Bytes32 calculateECDHKeyAgreement(final PublicKey partyKey) {
     LOG.debug("Calculating ECDH key agreement ...");
-    final java.security.PublicKey theirPublicKey =
-        signatureUtil.ecPointToJcePublicKey(partyKey.getW());
     try {
       final KeyAgreement keyAgreement = KeyAgreement.getInstance(KEY_AGREEMENT_ALGORITHM, provider);
       keyAgreement.init(privateKey);
-      keyAgreement.doPhase(theirPublicKey, true);
+      keyAgreement.doPhase(signatureUtil.ecPointToJcePublicKey(partyKey.getW()), true);
       return Bytes32.wrap(keyAgreement.generateSecret());
     } catch (final Exception e) {
       throw new SecurityModuleException("Error calculating ECDH key agreement", e);

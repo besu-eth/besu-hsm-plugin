@@ -50,7 +50,7 @@ class CloudHsmJceProvider extends JcaHsmProvider {
   private static final String CLOUDHSM_JAR_GLOB = "cloudhsm-*.jar";
 
   private final Provider provider;
-  private URLClassLoader cloudHsmClassLoader;
+  private final URLClassLoader cloudHsmClassLoader;
 
   /**
    * Bundles the results of JCE provider initialization: the resolved {@link Provider} and the
@@ -198,12 +198,12 @@ class CloudHsmJceProvider extends JcaHsmProvider {
   private static PrivateKey loadPrivateKey(final KeyStore keyStore, final String alias) {
     LOG.info("Loading private key for alias: {} ...", alias);
     try {
-      final java.security.Key key = keyStore.getKey(alias, null);
-      if (!(key instanceof PrivateKey)) {
-        throw new SecurityModuleException(
-            "Key loaded for alias is not a PrivateKey. Alias: " + alias);
+      if (keyStore.getKey(alias, null) instanceof PrivateKey key) {
+        return key;
       }
-      return (PrivateKey) key;
+
+      throw new SecurityModuleException(
+          "Key loaded for alias is not a PrivateKey. Alias: " + alias);
     } catch (final SecurityModuleException e) {
       throw e;
     } catch (final Exception e) {
@@ -214,12 +214,13 @@ class CloudHsmJceProvider extends JcaHsmProvider {
   private static ECPublicKey loadPublicKey(final KeyStore keyStore, final String alias) {
     LOG.info("Loading public key for alias: {} ...", alias);
     try {
-      final java.security.Key key = keyStore.getKey(alias, null);
-      if (!(key instanceof ECPublicKey)) {
-        throw new SecurityModuleException(
-            "Key loaded for alias is not an ECPublicKey. Alias: " + alias);
+      if (keyStore.getKey(alias, null) instanceof ECPublicKey publicKey) {
+        return publicKey;
       }
-      return (ECPublicKey) key;
+
+      throw new SecurityModuleException(
+          "Public key loaded is not an ECPublicKey for alias: " + alias);
+
     } catch (final SecurityModuleException e) {
       throw e;
     } catch (final Exception e) {
