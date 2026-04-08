@@ -60,13 +60,25 @@ class HsmSecurityModuleCryptoTest {
     r1PublicKey = (ECPublicKey) r1KeyPair.getPublic();
   }
 
+  private static JcaHsmProvider createTestProvider(
+      final Provider provider,
+      final PrivateKey privateKey,
+      final ECPublicKey publicKey,
+      final EcCurveParameters curveParams) {
+    return new JcaHsmProvider(provider, privateKey, publicKey, curveParams) {
+      @Override
+      public void close() {
+        // no-op for tests
+      }
+    };
+  }
+
   // -- secp256k1 tests --
 
   @Test
   void secp256k1SignReturnsValidSignature() throws Exception {
-    final HsmSecurityModule module =
-        new HsmSecurityModule(
-            provider, k1PrivateKey, k1PublicKey, "NONEWithECDSA", false, SECP256K1);
+    final JcaHsmProvider module =
+        createTestProvider(provider, k1PrivateKey, k1PublicKey, SECP256K1);
     final Bytes32 dataHash = Bytes32.random();
     final Signature signature = module.sign(dataHash);
 
@@ -85,9 +97,8 @@ class HsmSecurityModuleCryptoTest {
 
   @Test
   void secp256k1GetPublicKeyReturnsCorrectPoint() {
-    final HsmSecurityModule module =
-        new HsmSecurityModule(
-            provider, k1PrivateKey, k1PublicKey, "NONEWithECDSA", false, SECP256K1);
+    final JcaHsmProvider module =
+        createTestProvider(provider, k1PrivateKey, k1PublicKey, SECP256K1);
     final PublicKey publicKey = module.getPublicKey();
     assertThat(publicKey).isNotNull();
     assertThat(publicKey.getW()).isEqualTo(k1PublicKey.getW());
@@ -95,9 +106,8 @@ class HsmSecurityModuleCryptoTest {
 
   @Test
   void secp256k1CalculateECDHKeyAgreementReturnsSecret() throws Exception {
-    final HsmSecurityModule module =
-        new HsmSecurityModule(
-            provider, k1PrivateKey, k1PublicKey, "NONEWithECDSA", false, SECP256K1);
+    final JcaHsmProvider module =
+        createTestProvider(provider, k1PrivateKey, k1PublicKey, SECP256K1);
     final KeyPairGenerator kpg = KeyPairGenerator.getInstance("EC", provider);
     kpg.initialize(new ECGenParameterSpec("secp256k1"));
     final KeyPair otherKeyPair = kpg.generateKeyPair();
@@ -118,9 +128,8 @@ class HsmSecurityModuleCryptoTest {
 
   @Test
   void secp256k1MultipleSignaturesAreAllValidAndCanonical() throws Exception {
-    final HsmSecurityModule module =
-        new HsmSecurityModule(
-            provider, k1PrivateKey, k1PublicKey, "NONEWithECDSA", false, SECP256K1);
+    final JcaHsmProvider module =
+        createTestProvider(provider, k1PrivateKey, k1PublicKey, SECP256K1);
     final Bytes32 dataHash = Bytes32.random();
     final Signature sig1 = module.sign(dataHash);
     final Signature sig2 = module.sign(dataHash);
@@ -143,9 +152,8 @@ class HsmSecurityModuleCryptoTest {
 
   @Test
   void secp256r1SignReturnsValidSignature() throws Exception {
-    final HsmSecurityModule module =
-        new HsmSecurityModule(
-            provider, r1PrivateKey, r1PublicKey, "NONEWithECDSA", false, SECP256R1);
+    final JcaHsmProvider module =
+        createTestProvider(provider, r1PrivateKey, r1PublicKey, SECP256R1);
     final Bytes32 dataHash = Bytes32.random();
     final Signature signature = module.sign(dataHash);
 
@@ -164,9 +172,8 @@ class HsmSecurityModuleCryptoTest {
 
   @Test
   void secp256r1CalculateECDHKeyAgreementReturnsSecret() throws Exception {
-    final HsmSecurityModule module =
-        new HsmSecurityModule(
-            provider, r1PrivateKey, r1PublicKey, "NONEWithECDSA", false, SECP256R1);
+    final JcaHsmProvider module =
+        createTestProvider(provider, r1PrivateKey, r1PublicKey, SECP256R1);
     final KeyPairGenerator kpg = KeyPairGenerator.getInstance("EC", provider);
     kpg.initialize(new ECGenParameterSpec("secp256r1"));
     final KeyPair otherKeyPair = kpg.generateKeyPair();
@@ -191,13 +198,8 @@ class HsmSecurityModuleCryptoTest {
   void rejectsCurveMismatchBetweenKeyAndConfig() {
     assertThatThrownBy(
             () ->
-                new HsmSecurityModule(
-                    provider,
-                    k1PrivateKey,
-                    k1PublicKey,
-                    "NONEWithECDSA",
-                    false,
-                    new EcCurveParameters("secp256r1")))
+                createTestProvider(
+                    provider, k1PrivateKey, k1PublicKey, new EcCurveParameters("secp256r1")))
         .isInstanceOf(SecurityModuleException.class)
         .hasMessageContaining("does not match configured curve");
   }

@@ -15,6 +15,8 @@
 package org.hyperledger.besu.plugin.services.securitymodule.hsm;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -24,30 +26,45 @@ import org.junit.jupiter.api.condition.DisabledIf;
 
 class CloudHsmJceProviderTest {
 
+  private static final EcCurveParameters SECP256K1 = new EcCurveParameters("secp256k1");
+
+  private static HsmCliOptions mockCloudHsmOptions(
+      final String privateKeyAlias, final String publicKeyAlias) {
+    final HsmCliOptions options = mock(HsmCliOptions.class);
+    when(options.getProviderType()).thenReturn(HsmCliOptions.HsmProviderType.CLOUDHSM_JCE);
+    when(options.getPrivateKeyAlias()).thenReturn(privateKeyAlias);
+    when(options.getPublicKeyAlias()).thenReturn(publicKeyAlias);
+    return options;
+  }
+
   @Test
   void rejectsNullPrivateKeyAlias() {
-    assertThatThrownBy(() -> new CloudHsmJceProvider(null, "pubkey"))
+    final HsmCliOptions options = mockCloudHsmOptions(null, "pubkey");
+    assertThatThrownBy(() -> CloudHsmJceProvider.create(options, SECP256K1))
         .isInstanceOf(SecurityModuleException.class)
         .hasMessageContaining("Private key alias");
   }
 
   @Test
   void rejectsBlankPrivateKeyAlias() {
-    assertThatThrownBy(() -> new CloudHsmJceProvider("  ", "pubkey"))
+    final HsmCliOptions options = mockCloudHsmOptions("  ", "pubkey");
+    assertThatThrownBy(() -> CloudHsmJceProvider.create(options, SECP256K1))
         .isInstanceOf(SecurityModuleException.class)
         .hasMessageContaining("Private key alias");
   }
 
   @Test
   void rejectsNullPublicKeyAlias() {
-    assertThatThrownBy(() -> new CloudHsmJceProvider("privkey", null))
+    final HsmCliOptions options = mockCloudHsmOptions("privkey", null);
+    assertThatThrownBy(() -> CloudHsmJceProvider.create(options, SECP256K1))
         .isInstanceOf(SecurityModuleException.class)
         .hasMessageContaining("Public key alias");
   }
 
   @Test
   void rejectsBlankPublicKeyAlias() {
-    assertThatThrownBy(() -> new CloudHsmJceProvider("privkey", " "))
+    final HsmCliOptions options = mockCloudHsmOptions("privkey", " ");
+    assertThatThrownBy(() -> CloudHsmJceProvider.create(options, SECP256K1))
         .isInstanceOf(SecurityModuleException.class)
         .hasMessageContaining("Public key alias");
   }
@@ -55,7 +72,8 @@ class CloudHsmJceProviderTest {
   @DisabledIf("cloudHsmJarsPresent")
   @Test
   void throwsWhenCloudHsmJarNotFound() {
-    assertThatThrownBy(() -> new CloudHsmJceProvider("privkey", "pubkey"))
+    final HsmCliOptions options = mockCloudHsmOptions("privkey", "pubkey");
+    assertThatThrownBy(() -> CloudHsmJceProvider.create(options, SECP256K1))
         .isInstanceOf(SecurityModuleException.class)
         .hasMessageContaining("CloudHSM JCE jar");
   }

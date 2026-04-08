@@ -14,25 +14,43 @@
  */
 package org.hyperledger.besu.plugin.services.securitymodule.hsm;
 
-import java.security.PrivateKey;
-import java.security.Provider;
-import java.security.interfaces.ECPublicKey;
+import org.apache.tuweni.bytes.Bytes32;
+import org.hyperledger.besu.plugin.services.securitymodule.data.PublicKey;
+import org.hyperledger.besu.plugin.services.securitymodule.data.Signature;
 
 /**
  * Abstraction over different HSM provider backends. Each implementation handles provider
- * initialization, key loading, and cleanup for a specific HSM access mechanism.
+ * initialization, key loading, cryptographic operations, and cleanup for a specific HSM access
+ * mechanism. This allows new provider types (e.g., REST-based KMS) to be added without modifying
+ * {@link HsmSecurityModule}.
  */
 interface HsmProvider {
 
-  /** Returns the JCA {@link Provider} configured for this HSM backend. */
-  Provider getProvider();
+  /**
+   * Signs the given data hash using the HSM-managed private key.
+   *
+   * @param dataHash the 32-byte hash to sign
+   * @return the ECDSA signature with canonical (low-S) form
+   */
+  Signature sign(Bytes32 dataHash);
 
-  /** Returns the private key loaded from the HSM. */
-  PrivateKey getPrivateKey();
+  /**
+   * Returns the public key loaded from the HSM.
+   *
+   * @return the public key
+   */
+  PublicKey getPublicKey();
 
-  /** Returns the EC public key loaded from the HSM. */
-  ECPublicKey getEcPublicKey();
+  /**
+   * Performs ECDH key agreement using the HSM-managed private key and the given party's public key.
+   *
+   * @param partyKey the other party's public key
+   * @return the 32-byte shared secret
+   */
+  Bytes32 calculateECDHKeyAgreement(PublicKey partyKey);
 
-  /** Removes the JCA provider from the {@link java.security.Security} registry. */
-  void removeProvider();
+  /**
+   * Releases any resources held by this provider (JCA provider registration, classloaders, etc).
+   */
+  void close();
 }

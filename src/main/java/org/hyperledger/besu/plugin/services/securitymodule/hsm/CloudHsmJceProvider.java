@@ -28,6 +28,7 @@ import java.security.interfaces.ECPublicKey;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import org.hyperledger.besu.plugin.services.securitymodule.SecurityModuleException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,7 +37,7 @@ import org.slf4j.LoggerFactory;
  * HSM provider that uses the AWS CloudHSM JCE provider. The CloudHSM JCE jar is loaded from the
  * standard installation path {@code /opt/cloudhsm/java}.
  */
-class CloudHsmJceProvider implements HsmProvider {
+class CloudHsmJceProvider extends JcaHsmProvider {
   private static final Logger LOG = LoggerFactory.getLogger(CloudHsmJceProvider.class);
   private static final String CLOUDHSM_PROVIDER_CLASS =
       "com.amazonaws.cloudhsm.jce.provider.CloudHsmProvider";
@@ -46,40 +47,79 @@ class CloudHsmJceProvider implements HsmProvider {
 
   private final Provider provider;
   private final boolean ownsProvider;
-  private final String keystoreType;
-  private final PrivateKey privateKey;
-  private final ECPublicKey ecPublicKey;
   private URLClassLoader cloudHsmClassLoader;
 
-  private record ProviderInit(Provider provider, boolean ownsProvider, String keystoreType) {}
+  private record InitResult(
+      Provider provider,
+      boolean ownsProvider,
+      String keystoreType,
+      PrivateKey privateKey,
+      ECPublicKey ecPublicKey,
+      URLClassLoader classLoader) {}
 
   /**
-   * Creates a new CloudHSM JCE provider, initializing the provider and loading keys from the HSM.
+   * Creates a {@link CloudHsmJceProvider} after validating the relevant CLI options.
    *
-   * @param privateKeyAlias alias of the private key stored in CloudHSM
-   * @param publicKeyAlias alias of the public key stored in CloudHSM
-   * @throws SecurityModuleException if aliases are blank or key loading fails
+   * @param cliOptions the parsed CLI options
+   * @param curveParams the EC curve parameters
+   * @return a new {@link CloudHsmJceProvider} instance
+   * @throws SecurityModuleException if required options are missing or initialization fails
    */
-  CloudHsmJceProvider(final String privateKeyAlias, final String publicKeyAlias) {
-    if (privateKeyAlias == null || privateKeyAlias.isBlank()) {
-      throw new SecurityModuleException("Private key alias must not be null or empty");
+  static CloudHsmJceProvider create(
+      final HsmCliOptions cliOptions, final EcCurveParameters curveParams) {
+    if (cliOptions.getPrivateKeyAlias() == null || cliOptions.getPrivateKeyAlias().isBlank()) {
+      throw new SecurityModuleException("Private key alias is not provided");
     }
-    if (publicKeyAlias == null || publicKeyAlias.isBlank()) {
-      throw new SecurityModuleException("Public key alias must not be null or empty");
+    if (cliOptions.getPublicKeyAlias() == null || cliOptions.getPublicKeyAlias().isBlank()) {
+      throw new SecurityModuleException(
+          "Public key alias is required for cloudhsm-jce provider type");
     }
-    final ProviderInit init = initializeProvider();
-    this.provider = init.provider();
-    this.ownsProvider = init.ownsProvider();
-    this.keystoreType = init.keystoreType();
-    final KeyStore keyStore = loadKeyStore();
-    this.privateKey = loadPrivateKey(keyStore, privateKeyAlias);
-    this.ecPublicKey = loadPublicKey(keyStore, publicKeyAlias);
+    return new CloudHsmJceProvider(
+        cliOptions.getPrivateKeyAlias(), cliOptions.getPublicKeyAlias(), curveParams);
   }
 
-  private ProviderInit initializeProvider() {
+  private CloudHsmJceProvider(
+      final String privateKeyAlias,
+      final String publicKeyAlias,
+      final EcCurveParameters curveParams) {
+    this(init(privateKeyAlias, publicKeyAlias), curveParams);
+  }
+
+  private CloudHsmJceProvider(final InitResult result, final EcCurveParameters curveParams) {
+    super(result.provider(), result.privateKey(), result.ecPublicKey(), curveParams);
+    this.provider = result.provider();
+    this.ownsProvider = result.ownsProvider();
+    this.cloudHsmClassLoader = result.classLoader();
+  }
+
+  private static InitResult init(final String privateKeyAlias, final String publicKeyAlias) {
+    final ProviderInit providerInit = initializeProvider();
+    final KeyStore keyStore = loadKeyStore(providerInit.keystoreType());
+    final PrivateKey privateKey =
+        loadPrivateKey(keyStore, Objects.requireNonNull(privateKeyAlias, "privateKeyAlias"));
+    final ECPublicKey ecPublicKey =
+        loadPublicKey(keyStore, Objects.requireNonNull(publicKeyAlias, "publicKeyAlias"));
+    return new InitResult(
+        providerInit.provider(),
+        providerInit.ownsProvider(),
+        providerInit.keystoreType(),
+        privateKey,
+        ecPublicKey,
+        providerInit.classLoader());
+  }
+
+  private record ProviderInit(
+      Provider provider, boolean ownsProvider, String keystoreType, URLClassLoader classLoader) {}
+
+  private static ProviderInit initializeProvider() {
     LOG.info("Initializing CloudHSM JCE provider ...");
     try {
-      final Class<?> clazz = loadCloudHsmProviderClass();
+      final Path jar = findCloudHsmJar();
+      final URL jarUrl = jar.toUri().toURL();
+      final URLClassLoader classLoader =
+          new URLClassLoader(new URL[] {jarUrl}, Thread.currentThread().getContextClassLoader());
+      LOG.info("Loaded CloudHSM JCE jar: {}", jar);
+      final Class<?> clazz = classLoader.loadClass(CLOUDHSM_PROVIDER_CLASS);
       final String keystoreType = (String) clazz.getField(CLOUDHSM_KEYSTORE_TYPE_FIELD).get(null);
       final Provider newProvider = (Provider) clazz.getDeclaredConstructor().newInstance();
       final Provider existingProvider = Security.getProvider(newProvider.getName());
@@ -88,33 +128,18 @@ class CloudHsmJceProvider implements HsmProvider {
             "Reusing already registered CloudHSM JCE provider: {} v{}",
             existingProvider.getName(),
             existingProvider.getVersionStr());
-        return new ProviderInit(existingProvider, false, keystoreType);
+        return new ProviderInit(existingProvider, false, keystoreType, classLoader);
       }
       Security.addProvider(newProvider);
       LOG.info(
           "CloudHSM JCE provider registered: {} v{}",
           newProvider.getName(),
           newProvider.getVersionStr());
-      return new ProviderInit(newProvider, true, keystoreType);
+      return new ProviderInit(newProvider, true, keystoreType, classLoader);
     } catch (final SecurityModuleException e) {
       throw e;
     } catch (final Exception e) {
       throw new SecurityModuleException("Error initializing CloudHSM JCE provider", e);
-    }
-  }
-
-  private Class<?> loadCloudHsmProviderClass() {
-    final Path jar = findCloudHsmJar();
-    try {
-      final URL jarUrl = jar.toUri().toURL();
-      this.cloudHsmClassLoader =
-          new URLClassLoader(new URL[] {jarUrl}, Thread.currentThread().getContextClassLoader());
-      LOG.info("Loaded CloudHSM JCE jar: {}", jar);
-      return cloudHsmClassLoader.loadClass(CLOUDHSM_PROVIDER_CLASS);
-    } catch (final ClassNotFoundException e) {
-      throw new SecurityModuleException("CloudHSM JCE provider class not found in jar: " + jar, e);
-    } catch (final Exception e) {
-      throw new SecurityModuleException("Error loading CloudHSM JCE jar: " + jar, e);
     }
   }
 
@@ -156,7 +181,7 @@ class CloudHsmJceProvider implements HsmProvider {
     return jars.getFirst();
   }
 
-  private KeyStore loadKeyStore() {
+  private static KeyStore loadKeyStore(final String keystoreType) {
     LOG.info("Loading CloudHSM keystore ...");
     try {
       final KeyStore keyStore = KeyStore.getInstance(keystoreType);
@@ -171,7 +196,7 @@ class CloudHsmJceProvider implements HsmProvider {
     }
   }
 
-  private PrivateKey loadPrivateKey(final KeyStore keyStore, final String alias) {
+  private static PrivateKey loadPrivateKey(final KeyStore keyStore, final String alias) {
     LOG.info("Loading private key for alias: {} ...", alias);
     try {
       final java.security.Key key = keyStore.getKey(alias, null);
@@ -187,7 +212,7 @@ class CloudHsmJceProvider implements HsmProvider {
     }
   }
 
-  private ECPublicKey loadPublicKey(final KeyStore keyStore, final String alias) {
+  private static ECPublicKey loadPublicKey(final KeyStore keyStore, final String alias) {
     LOG.info("Loading public key for alias: {} ...", alias);
     try {
       final java.security.Key key = keyStore.getKey(alias, null);
@@ -204,7 +229,7 @@ class CloudHsmJceProvider implements HsmProvider {
   }
 
   @Override
-  public void removeProvider() {
+  public void close() {
     if (ownsProvider) {
       Security.removeProvider(provider.getName());
     }
@@ -215,20 +240,5 @@ class CloudHsmJceProvider implements HsmProvider {
         LOG.warn("Error closing CloudHSM classloader: {}", e.getMessage());
       }
     }
-  }
-
-  @Override
-  public Provider getProvider() {
-    return provider;
-  }
-
-  @Override
-  public PrivateKey getPrivateKey() {
-    return privateKey;
-  }
-
-  @Override
-  public ECPublicKey getEcPublicKey() {
-    return ecPublicKey;
   }
 }

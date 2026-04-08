@@ -15,6 +15,7 @@
 package org.hyperledger.besu.plugin.services.securitymodule.hsm;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.KeyStore;
@@ -24,6 +25,7 @@ import java.security.Security;
 import java.security.cert.Certificate;
 import java.security.interfaces.ECPublicKey;
 import java.util.Arrays;
+import java.util.Objects;
 import org.hyperledger.besu.plugin.services.securitymodule.SecurityModuleException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,38 +34,64 @@ import org.slf4j.LoggerFactory;
  * HSM provider that uses Java's SunPKCS11 provider to access a PKCS#11 token. Requires a PKCS#11
  * configuration file and a password file for token authentication.
  */
-class Pkcs11Provider implements HsmProvider {
+class Pkcs11Provider extends JcaHsmProvider {
   private static final Logger LOG = LoggerFactory.getLogger(Pkcs11Provider.class);
 
   private final Provider provider;
-  private final PrivateKey privateKey;
-  private final ECPublicKey ecPublicKey;
+
+  private record InitResult(Provider provider, PrivateKey privateKey, ECPublicKey ecPublicKey) {}
 
   /**
-   * Creates a new PKCS#11 provider, initializing the SunPKCS11 provider and loading keys.
+   * Creates a {@link Pkcs11Provider} after validating the relevant CLI options.
    *
-   * @param configPath path to the PKCS#11 configuration file
-   * @param passwordPath path to the file containing the token PIN/password
-   * @param keyAlias alias of the key pair stored on the PKCS#11 token
-   * @throws SecurityModuleException if any parameter is null/blank or initialization fails
+   * @param cliOptions the parsed CLI options
+   * @param curveParams the EC curve parameters
+   * @return a new {@link Pkcs11Provider} instance
+   * @throws SecurityModuleException if required options are missing or initialization fails
    */
-  Pkcs11Provider(final Path configPath, final Path passwordPath, final String keyAlias) {
-    if (configPath == null) {
-      throw new SecurityModuleException("PKCS#11 configuration file path must not be null");
+  static Pkcs11Provider create(
+      final HsmCliOptions cliOptions, final EcCurveParameters curveParams) {
+    if (cliOptions.getPkcs11ConfigPath() == null) {
+      throw new SecurityModuleException("PKCS#11 configuration file path is not provided");
     }
-    if (passwordPath == null) {
-      throw new SecurityModuleException("PKCS#11 password file path must not be null");
+    if (cliOptions.getPkcs11PasswordPath() == null) {
+      throw new SecurityModuleException("PKCS#11 password file path is not provided");
     }
-    if (keyAlias == null || keyAlias.isBlank()) {
-      throw new SecurityModuleException("PKCS#11 key alias must not be null or empty");
+    if (cliOptions.getPrivateKeyAlias() == null || cliOptions.getPrivateKeyAlias().isBlank()) {
+      throw new SecurityModuleException("Private key alias is not provided");
     }
-    this.provider = initializeProvider(configPath);
-    final KeyStore keyStore = loadKeyStore(passwordPath);
-    this.privateKey = loadPrivateKey(keyStore, keyAlias);
-    this.ecPublicKey = loadPublicKey(keyStore, keyAlias);
+    return new Pkcs11Provider(
+        cliOptions.getPkcs11ConfigPath(),
+        cliOptions.getPkcs11PasswordPath(),
+        cliOptions.getPrivateKeyAlias(),
+        curveParams);
   }
 
-  private Provider initializeProvider(final Path configPath) {
+  private Pkcs11Provider(
+      final Path configPath,
+      final Path passwordPath,
+      final String keyAlias,
+      final EcCurveParameters curveParams) {
+    this(init(configPath, passwordPath, keyAlias), curveParams);
+  }
+
+  private Pkcs11Provider(final InitResult result, final EcCurveParameters curveParams) {
+    super(result.provider(), result.privateKey(), result.ecPublicKey(), curveParams);
+    this.provider = result.provider();
+  }
+
+  private static InitResult init(
+      final Path configPath, final Path passwordPath, final String keyAlias) {
+    final Provider provider = initializeProvider(Objects.requireNonNull(configPath, "configPath"));
+    final KeyStore keyStore =
+        loadKeyStore(provider, Objects.requireNonNull(passwordPath, "passwordPath"));
+    final PrivateKey privateKey =
+        loadPrivateKey(keyStore, Objects.requireNonNull(keyAlias, "keyAlias"));
+    final ECPublicKey ecPublicKey = loadPublicKey(keyStore, keyAlias);
+    return new InitResult(provider, privateKey, ecPublicKey);
+  }
+
+  private static Provider initializeProvider(final Path configPath) {
     LOG.info("Initializing PKCS#11 provider ...");
     try {
       final Provider sunPKCS11 = Security.getProvider("SunPKCS11");
@@ -84,7 +112,7 @@ class Pkcs11Provider implements HsmProvider {
     }
   }
 
-  private KeyStore loadKeyStore(final Path passwordPath) {
+  private static KeyStore loadKeyStore(final Provider provider, final Path passwordPath) {
     LOG.info("Loading PKCS#11 keystore ...");
     final byte[] passwordBytes;
     try {
@@ -93,8 +121,7 @@ class Pkcs11Provider implements HsmProvider {
       throw new SecurityModuleException("Error reading password file: " + passwordPath, e);
     }
 
-    final char[] password =
-        new String(passwordBytes, java.nio.charset.StandardCharsets.UTF_8).trim().toCharArray();
+    final char[] password = new String(passwordBytes, StandardCharsets.UTF_8).trim().toCharArray();
     Arrays.fill(passwordBytes, (byte) 0);
 
     try {
@@ -108,7 +135,7 @@ class Pkcs11Provider implements HsmProvider {
     }
   }
 
-  private PrivateKey loadPrivateKey(final KeyStore keyStore, final String alias) {
+  private static PrivateKey loadPrivateKey(final KeyStore keyStore, final String alias) {
     LOG.info("Loading private key for alias: {} ...", alias);
     try {
       final java.security.Key key = keyStore.getKey(alias, new char[0]);
@@ -124,7 +151,7 @@ class Pkcs11Provider implements HsmProvider {
     }
   }
 
-  private ECPublicKey loadPublicKey(final KeyStore keyStore, final String alias) {
+  private static ECPublicKey loadPublicKey(final KeyStore keyStore, final String alias) {
     LOG.info("Loading public key for alias: {} ...", alias);
     try {
       final Certificate certificate = keyStore.getCertificate(alias);
@@ -145,22 +172,7 @@ class Pkcs11Provider implements HsmProvider {
   }
 
   @Override
-  public void removeProvider() {
+  public void close() {
     Security.removeProvider(provider.getName());
-  }
-
-  @Override
-  public Provider getProvider() {
-    return provider;
-  }
-
-  @Override
-  public PrivateKey getPrivateKey() {
-    return privateKey;
-  }
-
-  @Override
-  public ECPublicKey getEcPublicKey() {
-    return ecPublicKey;
   }
 }

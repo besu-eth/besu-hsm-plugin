@@ -24,12 +24,18 @@ import org.junit.jupiter.api.Test;
 
 class HsmSecurityModuleTest {
 
+  private static HsmCliOptions mockOptions(final HsmCliOptions.HsmProviderType providerType) {
+    final HsmCliOptions options = mock(HsmCliOptions.class);
+    when(options.getProviderType()).thenReturn(providerType);
+    when(options.getEcCurve()).thenReturn("secp256k1");
+    return options;
+  }
+
   // -- generic PKCS#11 validation tests --
 
   @Test
   void genericPkcs11RejectsNullConfigPath() {
-    final HsmCliOptions options = mock(HsmCliOptions.class);
-    when(options.getProviderType()).thenReturn(HsmCliOptions.HsmProviderType.GENERIC_PKCS11);
+    final HsmCliOptions options = mockOptions(HsmCliOptions.HsmProviderType.GENERIC_PKCS11);
     when(options.getPkcs11ConfigPath()).thenReturn(null);
 
     assertThatThrownBy(() -> new HsmSecurityModule(options))
@@ -39,8 +45,7 @@ class HsmSecurityModuleTest {
 
   @Test
   void genericPkcs11RejectsNullPasswordPath() {
-    final HsmCliOptions options = mock(HsmCliOptions.class);
-    when(options.getProviderType()).thenReturn(HsmCliOptions.HsmProviderType.GENERIC_PKCS11);
+    final HsmCliOptions options = mockOptions(HsmCliOptions.HsmProviderType.GENERIC_PKCS11);
     when(options.getPkcs11ConfigPath()).thenReturn(Path.of("/tmp/config"));
     when(options.getPkcs11PasswordPath()).thenReturn(null);
 
@@ -51,8 +56,7 @@ class HsmSecurityModuleTest {
 
   @Test
   void genericPkcs11RejectsNullKeyAlias() {
-    final HsmCliOptions options = mock(HsmCliOptions.class);
-    when(options.getProviderType()).thenReturn(HsmCliOptions.HsmProviderType.GENERIC_PKCS11);
+    final HsmCliOptions options = mockOptions(HsmCliOptions.HsmProviderType.GENERIC_PKCS11);
     when(options.getPkcs11ConfigPath()).thenReturn(Path.of("/tmp/config"));
     when(options.getPkcs11PasswordPath()).thenReturn(Path.of("/tmp/password"));
     when(options.getPrivateKeyAlias()).thenReturn(null);
@@ -66,8 +70,7 @@ class HsmSecurityModuleTest {
 
   @Test
   void cloudHsmJceRejectsNullKeyAlias() {
-    final HsmCliOptions options = mock(HsmCliOptions.class);
-    when(options.getProviderType()).thenReturn(HsmCliOptions.HsmProviderType.CLOUDHSM_JCE);
+    final HsmCliOptions options = mockOptions(HsmCliOptions.HsmProviderType.CLOUDHSM_JCE);
     when(options.getPrivateKeyAlias()).thenReturn(null);
 
     assertThatThrownBy(() -> new HsmSecurityModule(options))
@@ -77,8 +80,7 @@ class HsmSecurityModuleTest {
 
   @Test
   void cloudHsmJceRejectsNullPublicKeyAlias() {
-    final HsmCliOptions options = mock(HsmCliOptions.class);
-    when(options.getProviderType()).thenReturn(HsmCliOptions.HsmProviderType.CLOUDHSM_JCE);
+    final HsmCliOptions options = mockOptions(HsmCliOptions.HsmProviderType.CLOUDHSM_JCE);
     when(options.getPrivateKeyAlias()).thenReturn("mykey");
     when(options.getPublicKeyAlias()).thenReturn(null);
 
