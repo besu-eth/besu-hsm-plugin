@@ -51,6 +51,21 @@ class CloudHsmJceProvider extends JcaHsmProvider {
   private final boolean preRegisteredProvider;
   private URLClassLoader cloudHsmClassLoader;
 
+  /**
+   * Bundles the results of JCE provider initialization: the resolved {@link Provider}, whether it
+   * was already registered in the JCA runtime, the CloudHSM keystore type, and the classloader used
+   * to load the provider jar.
+   */
+  private record ProviderInit(
+      Provider provider,
+      boolean preRegisteredProvider,
+      String keystoreType,
+      URLClassLoader classLoader) {}
+
+  /**
+   * Bundles all artifacts produced during full provider + key initialization so they can be passed
+   * to the delegating constructor that calls {@code super()}.
+   */
   private record InitResult(
       Provider provider,
       boolean preRegisteredProvider,
@@ -113,12 +128,6 @@ class CloudHsmJceProvider extends JcaHsmProvider {
         ecPublicKey,
         providerInit.classLoader());
   }
-
-  private record ProviderInit(
-      Provider provider,
-      boolean preRegisteredProvider,
-      String keystoreType,
-      URLClassLoader classLoader) {}
 
   private static ProviderInit initializeProvider(final Path jarPath) {
     LOG.info("Initializing CloudHSM JCE provider ...");

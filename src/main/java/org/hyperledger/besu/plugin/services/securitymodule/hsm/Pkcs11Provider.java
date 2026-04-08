@@ -41,6 +41,10 @@ class Pkcs11Provider extends JcaHsmProvider {
 
   private final Provider provider;
 
+  /**
+   * Bundles all artifacts produced during PKCS#11 provider + key initialization so they can be
+   * passed to the delegating constructor that calls {@code super()}.
+   */
   private record InitResult(Provider provider, PrivateKey privateKey, ECPublicKey ecPublicKey) {}
 
   /**
