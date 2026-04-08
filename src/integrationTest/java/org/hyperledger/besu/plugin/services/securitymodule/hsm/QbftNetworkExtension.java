@@ -22,6 +22,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import org.junit.jupiter.api.extension.AfterAllCallback;
 import org.junit.jupiter.api.extension.BeforeAllCallback;
@@ -146,7 +147,7 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
 
   private static void deleteDirectory(final Path dir) {
     try (var paths = Files.walk(dir)) {
-      paths.sorted(java.util.Comparator.reverseOrder()).forEach(p -> p.toFile().delete());
+      paths.sorted(Comparator.reverseOrder()).forEach(p -> p.toFile().delete());
     } catch (final IOException e) {
       // Best-effort cleanup
     }
