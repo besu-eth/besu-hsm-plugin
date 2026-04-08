@@ -8,15 +8,18 @@ spotless = "8.3.0"
 junit-jupiter = "5.13.4"
 assertj = "3.27.7"
 testcontainers = "2.0.3"
-
+errorprone = "2.49.0"
+errorprone-plugin = "5.1.0"
 
 [libraries]
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit-jupiter" }
 assertj-core = { module = "org.assertj:assertj-core", version.ref = "assertj" }
 testcontainers = { module = "org.testcontainers:testcontainers", version.ref = "testcontainers" }
 testcontainers-junit-jupiter = { module = "org.testcontainers:testcontainers-junit-jupiter", version.ref = "testcontainers" }
+errorprone-core = {module = "com.google.errorprone:error_prone_core", version.ref = "errorprone"}
 
 [plugins]
 git-versioning = { id = "me.qoomon.git-versioning", version.ref = "git-versioning" }
 spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
 besu-plugin-distribution = { id = "net.consensys.besu-plugin-distribution", version.ref = "besu-plugin-distribution" }
+errorprone = { id = "net.ltgt.errorprone", version.ref = "errorprone-plugin"}

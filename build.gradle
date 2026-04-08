@@ -19,6 +19,7 @@ plugins {
   alias libs.plugins.git.versioning
   alias libs.plugins.spotless
   alias libs.plugins.besu.plugin.distribution
+  alias libs.plugins.errorprone
 }
 
 version = "0.0.0-SNAPSHOT"
@@ -50,6 +51,8 @@ besuPlugin {
 }
 
 dependencies {
+  errorprone libs.errorprone.core
+
   // Use JUnit Jupiter for testing.
   testImplementation libs.junit.jupiter
   testImplementation libs.assertj.core
