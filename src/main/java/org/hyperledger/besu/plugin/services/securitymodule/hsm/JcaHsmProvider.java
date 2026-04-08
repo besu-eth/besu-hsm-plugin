@@ -14,6 +14,8 @@
  */
 package org.hyperledger.besu.plugin.services.securitymodule.hsm;
 
+import static org.hyperledger.besu.plugin.services.securitymodule.hsm.Validations.requireNonNull;
+
 import com.google.common.annotations.VisibleForTesting;
 import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
@@ -21,7 +23,6 @@ import java.security.Provider;
 import java.security.Signature;
 import java.security.interfaces.ECPublicKey;
 import java.security.spec.ECParameterSpec;
-import java.util.Objects;
 import javax.crypto.KeyAgreement;
 import org.apache.tuweni.bytes.Bytes32;
 import org.hyperledger.besu.plugin.services.securitymodule.SecurityModuleException;
@@ -60,12 +61,12 @@ abstract class JcaHsmProvider implements HsmProvider {
       final PrivateKey privateKey,
       final ECPublicKey ecPublicKey,
       final EcCurveParameters curveParams) {
-    this.provider = Objects.requireNonNull(provider, "provider must not be null");
-    this.privateKey = Objects.requireNonNull(privateKey, "privateKey must not be null");
+    this.provider = requireNonNull(provider, "provider must not be null");
+    this.privateKey = requireNonNull(privateKey, "privateKey must not be null");
     final ECPublicKey validatedPublicKey =
-        Objects.requireNonNull(ecPublicKey, "ecPublicKey must not be null");
+        requireNonNull(ecPublicKey, "ecPublicKey must not be null");
     validatePublicKeyCurve(
-        validatedPublicKey, Objects.requireNonNull(curveParams, "curveParams must not be null"));
+        validatedPublicKey, requireNonNull(curveParams, "curveParams must not be null"));
     this.publicKey = validatedPublicKey::getW;
     this.signatureUtil = new SignatureUtil(curveParams);
     this.useP1363 = probeP1363Support();

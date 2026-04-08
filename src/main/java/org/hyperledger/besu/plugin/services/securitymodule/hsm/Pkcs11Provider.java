@@ -14,6 +14,9 @@
  */
 package org.hyperledger.besu.plugin.services.securitymodule.hsm;
 
+import static org.hyperledger.besu.plugin.services.securitymodule.hsm.Validations.requireNonBlank;
+import static org.hyperledger.besu.plugin.services.securitymodule.hsm.Validations.requireNonNull;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -25,7 +28,6 @@ import java.security.Security;
 import java.security.cert.Certificate;
 import java.security.interfaces.ECPublicKey;
 import java.util.Arrays;
-import java.util.Objects;
 import org.hyperledger.besu.plugin.services.securitymodule.SecurityModuleException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -51,15 +53,11 @@ class Pkcs11Provider extends JcaHsmProvider {
    */
   static Pkcs11Provider create(
       final HsmCliOptions cliOptions, final EcCurveParameters curveParams) {
-    if (cliOptions.getPkcs11ConfigPath() == null) {
-      throw new SecurityModuleException("PKCS#11 configuration file path is not provided");
-    }
-    if (cliOptions.getPkcs11PasswordPath() == null) {
-      throw new SecurityModuleException("PKCS#11 password file path is not provided");
-    }
-    if (cliOptions.getPrivateKeyAlias() == null || cliOptions.getPrivateKeyAlias().isBlank()) {
-      throw new SecurityModuleException("Private key alias is not provided");
-    }
+    requireNonNull(
+        cliOptions.getPkcs11ConfigPath(), "PKCS#11 configuration file path is not provided");
+    requireNonNull(
+        cliOptions.getPkcs11PasswordPath(), "PKCS#11 password file path is not provided");
+    requireNonBlank(cliOptions.getPrivateKeyAlias(), "Private key alias is not provided");
     return new Pkcs11Provider(
         cliOptions.getPkcs11ConfigPath(),
         cliOptions.getPkcs11PasswordPath(),
@@ -83,12 +81,11 @@ class Pkcs11Provider extends JcaHsmProvider {
   private static InitResult init(
       final Path configPath, final Path passwordPath, final String keyAlias) {
     final Provider provider =
-        initializeProvider(Objects.requireNonNull(configPath, "configPath must not be null"));
+        initializeProvider(requireNonNull(configPath, "configPath must not be null"));
     final KeyStore keyStore =
-        loadKeyStore(
-            provider, Objects.requireNonNull(passwordPath, "passwordPath must not be null"));
+        loadKeyStore(provider, requireNonNull(passwordPath, "passwordPath must not be null"));
     final PrivateKey privateKey =
-        loadPrivateKey(keyStore, Objects.requireNonNull(keyAlias, "keyAlias must not be null"));
+        loadPrivateKey(keyStore, requireNonNull(keyAlias, "keyAlias must not be null"));
     final ECPublicKey ecPublicKey = loadPublicKey(keyStore, keyAlias);
     return new InitResult(provider, privateKey, ecPublicKey);
   }

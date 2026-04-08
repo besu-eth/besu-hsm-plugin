@@ -14,6 +14,9 @@
  */
 package org.hyperledger.besu.plugin.services.securitymodule.hsm;
 
+import static org.hyperledger.besu.plugin.services.securitymodule.hsm.Validations.requireNonBlank;
+import static org.hyperledger.besu.plugin.services.securitymodule.hsm.Validations.requireNonNull;
+
 import java.io.IOException;
 import java.net.URL;
 import java.net.URLClassLoader;
@@ -28,7 +31,6 @@ import java.security.interfaces.ECPublicKey;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Objects;
 import org.hyperledger.besu.plugin.services.securitymodule.SecurityModuleException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -67,13 +69,10 @@ class CloudHsmJceProvider extends JcaHsmProvider {
    */
   static CloudHsmJceProvider create(
       final HsmCliOptions cliOptions, final EcCurveParameters curveParams) {
-    if (cliOptions.getPrivateKeyAlias() == null || cliOptions.getPrivateKeyAlias().isBlank()) {
-      throw new SecurityModuleException("Private key alias is not provided");
-    }
-    if (cliOptions.getPublicKeyAlias() == null || cliOptions.getPublicKeyAlias().isBlank()) {
-      throw new SecurityModuleException(
-          "Public key alias is required for cloudhsm-jce provider type");
-    }
+    requireNonBlank(cliOptions.getPrivateKeyAlias(), "Private key alias is not provided");
+    requireNonBlank(
+        cliOptions.getPublicKeyAlias(),
+        "Public key alias is required for cloudhsm-jce provider type");
     return new CloudHsmJceProvider(
         cliOptions.getPrivateKeyAlias(), cliOptions.getPublicKeyAlias(), curveParams);
   }
@@ -97,10 +96,9 @@ class CloudHsmJceProvider extends JcaHsmProvider {
     final KeyStore keyStore = loadKeyStore(providerInit.keystoreType());
     final PrivateKey privateKey =
         loadPrivateKey(
-            keyStore, Objects.requireNonNull(privateKeyAlias, "privateKeyAlias must not be null"));
+            keyStore, requireNonNull(privateKeyAlias, "privateKeyAlias must not be null"));
     final ECPublicKey ecPublicKey =
-        loadPublicKey(
-            keyStore, Objects.requireNonNull(publicKeyAlias, "publicKeyAlias must not be null"));
+        loadPublicKey(keyStore, requireNonNull(publicKeyAlias, "publicKeyAlias must not be null"));
     return new InitResult(
         providerInit.provider(),
         providerInit.ownsProvider(),
