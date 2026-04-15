@@ -32,12 +32,12 @@ manually in each session:
 
 ```bash
 export HSM_A_PRIVATE_IP=IP.ADDR.OF.HSM
-export CLOUDHSM_PIN="CryptoUser:CryptoUserPassword"
+export HSM_USER=CryptoUser
+export HSM_PASSWORD=CryptoUserPassword
+export CLOUDHSM_PIN="${HSM_USER}:${HSM_PASSWORD}"
 export CLOUDHSM_ROLE=crypto-user
 export PKCS11_MODULE_PATH=/opt/cloudhsm/lib/libcloudhsm_pkcs11.so
 export PATH=$PATH:/opt/cloudhsm/bin
-export HSM_USER=CryptoUser
-export HSM_PASSWORD=CryptoUserPassword
 ```
 
 Replace `IP.ADDR.OF.HSM`, `CryptoUser`, and `CryptoUserPassword` with your actual values.
