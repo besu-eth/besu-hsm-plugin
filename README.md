@@ -171,6 +171,9 @@ besu --security-module=hsm \
 > because CloudHSM does not associate certificates with key entries the way Java's SunPKCS11
 > `KeyStore` does.
 
+For a complete walkthrough of setting up a QBFT network with AWS CloudHSM, see the
+[AWS CloudHSM guides](docs/aws-CloudHSM/).
+
 ## Experimental: secp256r1 Curve Support
 
 The plugin supports the secp256r1 (NIST P-256) elliptic curve as an alternative to the default
@@ -201,12 +204,8 @@ compression prefix is discarded.
 **Impact:** HSM-backed validators must use DiscV4 (`--bootnodes`) or static peering
 (`--static-nodes-file`) for peer discovery rather than relying on DiscV5.
 
-**Why this can't be fixed with native PKCS#11 calls:** The limitation is in the PKCS#11 spec itself,
-not the Java wrapper. `CKM_ECDH1_DERIVE` with `CKD_NULL` returns only the x-coordinate per
-ANSI X9.63. The derived object is a `CKO_SECRET_KEY` (no `CKA_EC_POINT` attribute), and requesting
-a larger `CKA_VALUE_LEN` doesn't help — the ECDH primitive only produces 32 bytes. This is
-confirmed across SoftHSM2, AWS CloudHSM, YubiHSM2, and Thales Luna. Using Java's FFM API to call
-`C_DeriveKey` directly would yield the same x-only result.
+> **Note:** Support for compressed ECDH key agreement is planned and will be available once the
+> next Besu release includes the required `SecurityModule` API changes.
 
 ## Useful Links
 

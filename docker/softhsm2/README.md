@@ -73,7 +73,7 @@ docker run -d --name besu-node-0 \
   besu-qbft-hsm-test -c \
   'unzip -o -j /tmp/besu-hsm-plugin.zip -d /opt/besu/plugins/ && /entrypoint-besu.sh \
     --genesis-file=/data/genesis.json \
-    --security-module=pkcs11-hsm \
+    --security-module=hsm \
     --plugin-pkcs11-hsm-config-path=/etc/besu/config/pkcs11-softhsm.cfg \
     --plugin-pkcs11-hsm-password-path=/etc/besu/config/pkcs11-hsm-password.txt \
     --plugin-pkcs11-hsm-key-alias=testkey \
@@ -107,7 +107,7 @@ for i in 1 2 3; do
     besu-qbft-hsm-test -c \
     "unzip -o -j /tmp/besu-hsm-plugin.zip -d /opt/besu/plugins/ && /entrypoint-besu.sh \
       --genesis-file=/data/genesis.json \
-      --security-module=pkcs11-hsm \
+      --security-module=hsm \
       --plugin-pkcs11-hsm-config-path=/etc/besu/config/pkcs11-softhsm.cfg \
       --plugin-pkcs11-hsm-password-path=/etc/besu/config/pkcs11-hsm-password.txt \
       --plugin-pkcs11-hsm-key-alias=testkey \
