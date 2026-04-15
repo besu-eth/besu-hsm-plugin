@@ -171,6 +171,9 @@ besu --security-module=hsm \
 > because CloudHSM does not associate certificates with key entries the way Java's SunPKCS11
 > `KeyStore` does.
 
+For a complete walkthrough of setting up a QBFT network with AWS CloudHSM, see the
+[AWS CloudHSM guides](docs/aws-CloudHSM/).
+
 ## Experimental: secp256r1 Curve Support
 
 The plugin supports the secp256r1 (NIST P-256) elliptic curve as an alternative to the default
