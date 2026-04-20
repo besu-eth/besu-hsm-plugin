@@ -7,9 +7,9 @@ QBFT genesis configuration.
 
 ## Prerequisites
 
-- **An initialized and activated CloudHSM cluster.** Follow the
-  [AWS cluster initialization guide](https://docs.aws.amazon.com/cloudhsm/latest/userguide/initialize-cluster.html)
-  if you have not done this yet. You will need:
+- **An initialized and activated CloudHSM cluster.** Read the
+  [AWS cluster initialization guide](https://docs.aws.amazon.com/cloudhsm/latest/userguide/initialize-cluster.html). Then follow the [cluster setup guide](./cluster-setup/README.md) if you have not done this yet.
+  You will need:
   - The HSM IP address
   - The cluster certificate (`customerCA.crt`)
   - CryptoUser credentials (username and password)
