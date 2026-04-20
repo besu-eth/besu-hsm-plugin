@@ -2,7 +2,7 @@
 
 [versions]
 besu = "26.2.0"
-besu-plugin-distribution = "0.1.6"
+besu-plugin-distribution = "0.2.0"
 git-versioning = "6.4.4"
 spotless = "8.3.0"
 junit-jupiter = "5.13.4"
