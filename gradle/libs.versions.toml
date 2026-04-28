@@ -1,7 +1,7 @@
 # https://docs.gradle.org/current/userguide/version_catalogs.html#sec::toml-dependencies-format
 
 [versions]
-besu = "26.2.0"
+besu = "26.4.0" # used by besuPlugin in build.gradle
 besu-plugin-distribution = "0.1.6"
 git-versioning = "6.4.4"
 spotless = "8.3.0"

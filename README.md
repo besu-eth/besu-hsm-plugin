@@ -1,5 +1,6 @@
 # Besu HSM Plugin
  [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/besu-eth/besu-hsm-plugin/blob/main/LICENSE)
+ [![Besu](https://img.shields.io/badge/Besu-26.4.0-blue)](https://github.com/besu-eth/besu/releases/tag/26.4.0)
  [![Discord](https://img.shields.io/discord/905194001349627914?logo=Hyperledger&style=plastic)](https://discord.com/invite/hyperledger)
 
 A Hardware Security Module (HSM) plugin for [Hyperledger Besu](https://github.com/besu-eth/besu). This plugin enables Besu 
@@ -252,12 +253,9 @@ Instructions for how to get started with developing on the Besu HSM Plugin codeb
 ./gradlew integrationTest
 ```
 
-> **Note:** Integration tests currently run against the `hyperledger/besu:develop` Docker image.
-> This is because the [besu-native-ec static OpenSSL fix](https://github.com/besu-eth/besu/pull/10096)
-> has been merged but is not yet included in a Besu release. Once a Besu release containing this fix
-> is available, we need to:
-> 1. Update the Besu version in `build.gradle` (plugin dependency)
-> 2. Update the Besu image tag in the `FROM` line of `docker/softhsm2/Dockerfile` to match the release tag
+> **Note:** Integration tests build the SoftHSM2 image from `docker/softhsm2/Dockerfile`,
+> pinning `hyperledger/besu` to the version declared in `gradle/libs.versions.toml`
+> (`besu = "..."`). Bumping the catalog automatically updates the integration-test image.
 
 [Besu HSM Plugin Issues]: https://github.com/besu-eth/besu-hsm-plugin/issues
 [Besu channel on Discord]: https://discord.com/invite/hyperledger

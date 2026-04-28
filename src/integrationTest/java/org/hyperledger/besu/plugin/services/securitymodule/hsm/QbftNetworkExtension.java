@@ -52,6 +52,7 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
 
   private static final int NODE_COUNT = 4;
   private static final String IMAGE_NAME = "besu-hsm-test";
+  private static final String BESU_VERSION = System.getProperty("besu.version", "develop");
   private static final Path DOCKER_DIR =
       Path.of(System.getProperty("user.dir"), "docker", "softhsm2");
   private static final Path DIST_DIR =
@@ -81,7 +82,9 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
   public void beforeAll(final ExtensionContext context) throws Exception {
     tempDir = Files.createTempDirectory("qbft-hsm-" + ecCurve);
     image =
-        new ImageFromDockerfile(IMAGE_NAME, false).withDockerfile(DOCKER_DIR.resolve("Dockerfile"));
+        new ImageFromDockerfile(IMAGE_NAME, false)
+            .withDockerfile(DOCKER_DIR.resolve("Dockerfile"))
+            .withBuildArg("BESU_VERSION", BESU_VERSION);
     network = Network.newNetwork();
     sharedDataDir = Files.createDirectory(tempDir.resolve("data"));
     tokenDirs = new ArrayList<>();

@@ -10,7 +10,6 @@
 - QBFT 4-node integration test with HSM-backed block signing, including value transfer verification
 - Curve-parameterized integration tests for both secp256k1 and secp256r1
 - CI integration test job in GitHub Actions workflow
-- Placeholder Docker setups for YubiHSM and AWS CloudHSM
 - Documentation for DiscV5 limitation with PKCS#11 HSM
 
 ## 0.0.0

@@ -111,7 +111,39 @@ tasks.register('integrationTest', Test) {
   dependsOn distZip
   distZip.outputs.upToDateWhen { false }
   useJUnitPlatform()
+  systemProperty 'besu.version', libs.versions.besu.asProvider().get()
   outputs.upToDateWhen { false } // Always re-run; Docker container state is not tracked by Gradle
+}
+
+tasks.register('verifyReadmeBesuVersion') {
+  description = 'Verifies the Besu version badge in README.md matches gradle/libs.versions.toml.'
+  group = 'verification'
+
+  def expected = libs.versions.besu.asProvider().get()
+  def readmeFile = layout.projectDirectory.file('README.md').asFile
+  inputs.file(readmeFile)
+  inputs.property('expectedVersion', expected)
+
+  doLast {
+    def text = readmeFile.text
+    def checks = [
+      [pattern: ~/Besu-(\d+\.\d+\.\d+)-blue/, label: 'badge label'],
+      [pattern: ~/releases\/tag\/(\d+\.\d+\.\d+)/, label: 'release link'],
+    ]
+    checks.each { check ->
+      def matcher = text =~ check.pattern
+      def found = matcher.find() ? matcher.group(1) : null
+      if (found != expected) {
+        throw new GradleException(
+        "README.md Besu ${check.label} version (${found ?: 'not found'}) does not match " +
+        "gradle/libs.versions.toml ($expected). Update README.md.")
+      }
+    }
+  }
+}
+
+tasks.named('check') {
+  dependsOn 'verifyReadmeBesuVersion'
 }
 
 spotless {
