@@ -186,28 +186,15 @@ abstract class JcaHsmProvider implements HsmProvider {
    * right-aligning and zero-padding if the value is shorter than 32 bytes.
    *
    * <p>{@link BigInteger#toByteArray()} uses two's complement encoding, which may produce a leading
-   * {@code 0x00} sign byte for values with the high bit set, resulting in 33 bytes. This method
-   * strips that sign byte and always returns exactly 32 bytes.
+   * {@code 0x00} sign byte for values with the high bit set, resulting in 33 bytes; {@link
+   * Bytes#trimLeadingZeros()} drops that, and {@link Bytes32#leftPad(Bytes)} pads shorter values to
+   * exactly 32 bytes (and rejects values that don't fit).
    *
    * @param value a non-negative {@link BigInteger}, typically an EC point coordinate
    * @return a {@link Bytes32} containing the big-endian 32-byte representation of {@code value}
-   * @throws IllegalArgumentException if {@code value} requires more than 32 bytes (i.e., is larger
-   *     than 2^256 - 1)
    */
   private static Bytes32 toBytes32(final BigInteger value) {
-    final byte[] bytes = value.toByteArray();
-    if (bytes.length == 32) {
-      return Bytes32.wrap(bytes);
-    }
-    final byte[] padded = new byte[32];
-    if (bytes.length > 32) {
-      // Strip the leading 0x00 sign byte from two's complement encoding of unsigned value
-      System.arraycopy(bytes, bytes.length - 32, padded, 0, 32);
-    } else {
-      // Right-align with zero-padding on the left for values shorter than 32 bytes
-      System.arraycopy(bytes, 0, padded, 32 - bytes.length, bytes.length);
-    }
-    return Bytes32.wrap(padded);
+    return Bytes32.leftPad(Bytes.wrap(value.toByteArray()).trimLeadingZeros());
   }
 
   private static void validatePartyKeyOnCurve(final ECPoint point, final ECCurve bcCurve) {
