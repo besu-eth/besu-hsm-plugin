@@ -1,0 +1,50 @@
+%% Besu HSM Plugin — Architecture
+%% Render: npx -y -p @mermaid-js/mermaid-cli mmdc -i docs/besu-hsm-plugin-architecture.mmd -o docs/besu-hsm-plugin-architecture.png -w 1600 -b transparent
+flowchart TB
+    classDef besu fill:#cfe2ff,stroke:#0d6efd,color:#000
+    classDef plugin fill:#bee3db,stroke:#2a9d8f,color:#000
+    classDef abstract fill:#e9ecef,stroke:#495057,color:#000,font-style:italic
+    classDef jca fill:#fff3cd,stroke:#b58900,color:#000
+    classDef hsm fill:#ffd7a8,stroke:#cc5500,color:#000
+    classDef config fill:#f8f9fa,stroke:#6c757d,color:#000
+    classDef future stroke-dasharray: 5 5,fill:#f8f9fa,stroke:#6c757d,color:#000
+
+    besu["<b>Besu QBFT Validator</b><br/>P2P (RLPx) handshake — ECDH<br/>QBFT consensus messages — sign"]:::besu
+    config["<b>Plugin CLI options</b><br/>--plugin-hsm-provider-type<br/>--plugin-hsm-config-path<br/>--plugin-hsm-password-path<br/>--plugin-hsm-key-alias<br/>--plugin-hsm-public-key-alias<br/>--plugin-hsm-ec-curve"]:::config
+    api(["<b>Besu Plugin API</b><br/>SecurityModuleService · PicoCLIOptions"]):::abstract
+
+    subgraph plugin["besu-hsm-plugin"]
+        direction TB
+        secModule["<b>HsmSecurityModule</b><br/><i>implements Besu SecurityModule</i><br/>sign · getPublicKey · ECDH"]:::plugin
+        provider(["<b>HsmProvider</b> «interface»"]):::abstract
+        jcaBase(["<b>JcaHsmProvider</b> «abstract»<br/>JCA-based sign + ECDH"]):::abstract
+        pkcs11Impl["<b>Pkcs11Provider</b><br/>generic PKCS#11 via SunPKCS11"]:::plugin
+        cloudHsmImpl["<b>CloudHsmJceProvider</b><br/>AWS CloudHSM via JCE"]:::plugin
+        futureImpl["<b>Vendor JCE Provider</b><br/><i>future extension point</i>"]:::future
+    end
+
+    sunpkcs11["<b>SunPKCS11</b><br/>JCA Provider (JDK)"]:::jca
+    cloudHsmJce["<b>AWS CloudHSM</b><br/>JCE Provider"]:::jca
+    vendorJce["<b>Vendor JCE Provider</b><br/>(e.g. native ECDH support)"]:::future
+
+    pkcs11Hsm["<b>PKCS#11 HSM</b><br/>SoftHSM2 · YubiHSM2 · Thales Luna<br/>nCipher · Azure Dedicated HSM<br/>Google Cloud HSM · AWS CloudHSM"]:::hsm
+    awsCloudHsm["<b>AWS CloudHSM Cluster</b>"]:::hsm
+    vendorHsm["<b>Vendor HSM</b><br/>(PKCS#11 ECDH unsupported<br/>or vendor-specific features)"]:::future
+
+    besu -->|"sign · getPublicKey · ECDH"| api
+    config -.->|"--plugin-hsm-* flags"| api
+    api -->|"SecurityModule registration / invocation"| secModule
+    api -. "PicoCLIOptions parsing" .-> secModule
+    secModule --> provider
+    provider -.->|implemented by| jcaBase
+    jcaBase --> pkcs11Impl
+    jcaBase --> cloudHsmImpl
+    jcaBase -.-> futureImpl
+
+    pkcs11Impl -->|"Security.addProvider"| sunpkcs11
+    cloudHsmImpl -->|"Security.addProvider"| cloudHsmJce
+    futureImpl -.->|"Security.addProvider"| vendorJce
+
+    sunpkcs11 -->|"PKCS#11 native lib<br/>(e.g. libsofthsm2.so)"| pkcs11Hsm
+    cloudHsmJce -->|"CloudHSM client SDK"| awsCloudHsm
+    vendorJce -.->|"vendor protocol"| vendorHsm
