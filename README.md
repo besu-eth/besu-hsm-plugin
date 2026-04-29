@@ -194,19 +194,16 @@ for details.
 
 ## Known Limitations
 
-### DiscV5 (Discovery v5) Not Supported
+### DiscV5 (Discovery v5) requires secp256k1
 
-The PKCS#11 HSM plugin does not support the `calculateECDHKeyAgreementCompressed` method required
-by Besu's DiscV5 discovery protocol. This method needs the full compressed EC point (SEC1 format:
-prefix byte + x-coordinate) from the ECDH scalar multiplication, but the PKCS#11 standard's
-`CKM_ECDH1_DERIVE` mechanism only returns the x-coordinate — the y-parity needed for the
-compression prefix is discarded.
+DiscV5 is supported with HSM-backed keys, but only on the **secp256k1** curve. Besu's DiscV5
+implementation (and the underlying ENR v4 identity scheme) is fixed to secp256k1, so HSM keys on
+the **secp256r1** curve cannot participate in DiscV5 peer discovery. Use DiscV4 (`--bootnodes`)
+or static peering (`--static-nodes-file`) for secp256r1 deployments.
 
-**Impact:** HSM-backed validators must use DiscV4 (`--bootnodes`) or static peering
-(`--static-nodes-file`) for peer discovery rather than relying on DiscV5.
-
-> **Note:** Support for compressed ECDH key agreement is planned and will be available once the
-> next Besu release includes the required `SecurityModule` API changes.
+PKCS#11's `CKM_ECDH1_DERIVE` returns only the x-coordinate of the ECDH shared point, so the
+plugin recovers the y-parity needed for SEC1-compressed encoding via a second ECDH against a
+probe point (`Q + G`). This costs one extra HSM round-trip per DiscV5 handshake.
 
 ## Useful Links
 

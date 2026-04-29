@@ -10,7 +10,7 @@
 - QBFT 4-node integration test with HSM-backed block signing, including value transfer verification
 - Curve-parameterized integration tests for both secp256k1 and secp256r1
 - CI integration test job in GitHub Actions workflow
-- Documentation for DiscV5 limitation with PKCS#11 HSM
+- DiscV5 (Discovery v5) support for HSM-backed secp256k1 keys via `calculateECDHKeyAgreementCompressed` (probe-point workaround for PKCS#11's x-only ECDH)
 
 ## 0.0.0
 

@@ -17,6 +17,7 @@ package org.hyperledger.besu.plugin.services.securitymodule.hsm;
 import static org.hyperledger.besu.plugin.services.securitymodule.hsm.Validations.requireNonNull;
 
 import com.google.common.annotations.VisibleForTesting;
+import java.math.BigInteger;
 import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
 import java.security.Provider;
@@ -24,8 +25,11 @@ import java.security.Security;
 import java.security.Signature;
 import java.security.interfaces.ECPublicKey;
 import java.security.spec.ECParameterSpec;
+import java.security.spec.ECPoint;
 import javax.crypto.KeyAgreement;
+import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
+import org.bouncycastle.math.ec.ECCurve;
 import org.hyperledger.besu.plugin.services.securitymodule.SecurityModuleException;
 import org.hyperledger.besu.plugin.services.securitymodule.data.PublicKey;
 import org.slf4j.Logger;
@@ -44,6 +48,7 @@ abstract class JcaHsmProvider implements HsmProvider {
   private final PrivateKey privateKey;
   private final PublicKey publicKey;
   private final String signatureAlgorithm;
+  private final EcCurveParameters curveParams;
   private final boolean useP1363;
   private final SignatureUtil signatureUtil;
 
@@ -70,6 +75,7 @@ abstract class JcaHsmProvider implements HsmProvider {
         validatedPublicKey, requireNonNull(curveParams, "curveParams must not be null"));
     this.publicKey = validatedPublicKey::getW;
     this.signatureUtil = new SignatureUtil(curveParams);
+    this.curveParams = curveParams;
     this.useP1363 = probeP1363Support();
     this.signatureAlgorithm = useP1363 ? "NONEwithECDSAinP1363Format" : "NONEWithECDSA";
     LOG.info("Using signature algorithm: {}", signatureAlgorithm);
@@ -128,6 +134,88 @@ abstract class JcaHsmProvider implements HsmProvider {
       return Bytes32.wrap(keyAgreement.generateSecret());
     } catch (final Exception e) {
       throw new SecurityModuleException("Error calculating ECDH key agreement", e);
+    }
+  }
+
+  @Override
+  public Bytes calculateECDHKeyAgreementCompressed(final PublicKey partyKey) {
+    LOG.debug("Calculating compressed ECDH key agreement");
+    try {
+      validatePartyKeyOnCurve(partyKey.getW(), curveParams.getBCCurve());
+
+      final Bytes32 xCoord = calculateECDHKeyAgreement(partyKey);
+
+      // recover even-y candidate point from x using the curve equation
+      final byte[] compressedEven = new byte[33];
+      compressedEven[0] = 0x02;
+      System.arraycopy(xCoord.toArray(), 0, compressedEven, 1, 32);
+      final var candidateEven = curveParams.getBCCurve().decodePoint(compressedEven);
+
+      // Compute probe point Q' = Q + G (EC point addition in software)
+      var bcPartyPoint = signatureUtil.jcePointToBCPoint(partyKey.getW());
+      var probePoint = bcPartyPoint.add(curveParams.getBCGenPoint()).normalize();
+
+      // Second ECDH call with probe point through HSM
+      final ECPoint probeJcaPoint =
+          new ECPoint(
+              probePoint.getAffineXCoord().toBigInteger(),
+              probePoint.getAffineYCoord().toBigInteger());
+      final Bytes32 xVerify = calculateECDHKeyAgreement(() -> probeJcaPoint);
+
+      // Determine correct y-parity
+      // d*(Q+G) = d*Q + d*G = P + P_us, so check which candidate satisfies this
+      final var ourPubKeyBc = signatureUtil.jcePointToBCPoint(publicKey.getW());
+      final var sumEven = candidateEven.add(ourPubKeyBc).normalize();
+      final var sumEvenX = sumEven.getAffineXCoord().toBigInteger();
+
+      if (toBytes32(sumEvenX).equals(xVerify)) {
+        return Bytes.wrap(candidateEven.getEncoded(true));
+      } else {
+        return Bytes.wrap(candidateEven.negate().getEncoded(true));
+      }
+    } catch (final SecurityModuleException e) {
+      throw e;
+    } catch (final Exception e) {
+      throw new SecurityModuleException(
+          "Unexpected error while calculating compressed ECDH key agreement", e);
+    }
+  }
+
+  /**
+   * Converts a non-negative {@link BigInteger} to a 32-byte big-endian representation,
+   * right-aligning and zero-padding if the value is shorter than 32 bytes.
+   *
+   * <p>{@link BigInteger#toByteArray()} uses two's complement encoding, which may produce a leading
+   * {@code 0x00} sign byte for values with the high bit set, resulting in 33 bytes. This method
+   * strips that sign byte and always returns exactly 32 bytes.
+   *
+   * @param value a non-negative {@link BigInteger}, typically an EC point coordinate
+   * @return a {@link Bytes32} containing the big-endian 32-byte representation of {@code value}
+   * @throws IllegalArgumentException if {@code value} requires more than 32 bytes (i.e., is larger
+   *     than 2^256 - 1)
+   */
+  private static Bytes32 toBytes32(final BigInteger value) {
+    final byte[] bytes = value.toByteArray();
+    if (bytes.length == 32) {
+      return Bytes32.wrap(bytes);
+    }
+    final byte[] padded = new byte[32];
+    if (bytes.length > 32) {
+      // Strip the leading 0x00 sign byte from two's complement encoding of unsigned value
+      System.arraycopy(bytes, bytes.length - 32, padded, 0, 32);
+    } else {
+      // Right-align with zero-padding on the left for values shorter than 32 bytes
+      System.arraycopy(bytes, 0, padded, 32 - bytes.length, bytes.length);
+    }
+    return Bytes32.wrap(padded);
+  }
+
+  private static void validatePartyKeyOnCurve(final ECPoint point, final ECCurve bcCurve) {
+    try {
+      bcCurve.createPoint(point.getAffineX(), point.getAffineY()).normalize();
+    } catch (final IllegalArgumentException e) {
+      throw new SecurityModuleException(
+          "Party key is not a valid point on the configured curve", e);
     }
   }
 

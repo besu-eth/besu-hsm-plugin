@@ -14,6 +14,7 @@
  */
 package org.hyperledger.besu.plugin.services.securitymodule.hsm;
 
+import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
 import org.hyperledger.besu.plugin.services.securitymodule.SecurityModule;
 import org.hyperledger.besu.plugin.services.securitymodule.SecurityModuleException;
@@ -72,6 +73,12 @@ public class HsmSecurityModule implements SecurityModule, AutoCloseable {
   public Bytes32 calculateECDHKeyAgreement(final PublicKey partyKey)
       throws SecurityModuleException {
     return hsmProvider.calculateECDHKeyAgreement(partyKey);
+  }
+
+  @Override
+  public Bytes calculateECDHKeyAgreementCompressed(final PublicKey partyKey)
+      throws SecurityModuleException {
+    return hsmProvider.calculateECDHKeyAgreementCompressed(partyKey);
   }
 
   @Override

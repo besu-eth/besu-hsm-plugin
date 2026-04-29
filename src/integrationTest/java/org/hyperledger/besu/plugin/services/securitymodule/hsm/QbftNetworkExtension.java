@@ -15,8 +15,15 @@
 package org.hyperledger.besu.plugin.services.securitymodule.hsm;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -28,9 +35,9 @@ import org.junit.jupiter.api.extension.AfterAllCallback;
 import org.junit.jupiter.api.extension.BeforeAllCallback;
 import org.junit.jupiter.api.extension.ExtensionContext;
 import org.testcontainers.containers.BindMode;
-import org.testcontainers.containers.ContainerState;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.Network;
+import org.testcontainers.containers.output.OutputFrame;
 import org.testcontainers.containers.output.ToStringConsumer;
 import org.testcontainers.containers.startupcheck.OneShotStartupCheckStrategy;
 import org.testcontainers.containers.wait.strategy.Wait;
@@ -63,7 +70,11 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
   static final int RPC_PORT = 8545;
   private static final int P2P_PORT = 30303;
 
+  private static final HttpClient HTTP_CLIENT = HttpClient.newHttpClient();
+  private static final ObjectMapper MAPPER = new ObjectMapper();
+
   private final String ecCurve;
+  private final boolean v5Discovery;
   private final Path distZip;
 
   private ImageFromDockerfile image;
@@ -71,11 +82,15 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
   private Network network;
   private Path sharedDataDir;
   private List<Path> tokenDirs;
-  private List<String> publicKeys;
   private List<GenericContainer<?>> besuContainers;
 
   QbftNetworkExtension(final String ecCurve) {
+    this(ecCurve, false);
+  }
+
+  QbftNetworkExtension(final String ecCurve, final boolean v5Discovery) {
     this.ecCurve = ecCurve;
+    this.v5Discovery = v5Discovery;
     this.distZip = findDistZip();
   }
 
@@ -89,7 +104,6 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
     network = Network.newNetwork();
     sharedDataDir = Files.createDirectory(tempDir.resolve("data"));
     tokenDirs = new ArrayList<>();
-    publicKeys = new ArrayList<>();
 
     // Phase 1: Generate keys on each node's SoftHSM2
     for (int i = 0; i < NODE_COUNT; i++) {
@@ -98,13 +112,11 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
       generateNodeKey(i, tokenDir);
     }
 
-    // Read public keys for enode URL construction
+    // Verify each node's public key was written by the entrypoint script.
     for (int i = 0; i < NODE_COUNT; i++) {
       final Path pubkeyFile = sharedDataDir.resolve("node-" + i).resolve("pubkey.hex");
       assertThat(pubkeyFile).exists();
-      final String pubkey = Files.readString(pubkeyFile).trim();
-      assertThat(pubkey).hasSize(128);
-      publicKeys.add(pubkey);
+      assertThat(Files.readString(pubkeyFile).trim()).hasSize(128);
     }
 
     // Phase 2: Generate QBFT genesis
@@ -114,15 +126,26 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
     // Phase 3: Start QBFT network
     besuContainers = new ArrayList<>();
     startBootnode();
-    final String bootnodeEnodeUrl = getBootnodeEnodeUrl();
+    final String bootnodeUri = getBootnodeUri(v5Discovery ? "enr" : "enode");
     for (int i = 1; i < NODE_COUNT; i++) {
-      startValidatorNode(i, bootnodeEnodeUrl);
+      startValidatorNode(i, bootnodeUri);
     }
   }
 
   @Override
   public void afterAll(final ExtensionContext context) {
     if (besuContainers != null) {
+      for (int i = 0; i < besuContainers.size(); i++) {
+        final GenericContainer<?> c = besuContainers.get(i);
+        System.err.println("===== besu-node-" + i + " logs (begin) =====");
+        try {
+          System.err.println(
+              c.getLogs(OutputFrame.OutputType.STDOUT, OutputFrame.OutputType.STDERR));
+        } catch (final Exception e) {
+          System.err.println("Failed to fetch logs for besu-node-" + i + ": " + e);
+        }
+        System.err.println("===== besu-node-" + i + " logs (end) =====");
+      }
       besuContainers.forEach(GenericContainer::stop);
     }
     if (network != null) {
@@ -249,21 +272,42 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
     besuContainers.add(container);
   }
 
-  private String getBootnodeEnodeUrl() {
-    final ContainerState bootnode = besuContainers.get(0);
-    final String bootnodeIp =
-        bootnode
-            .getContainerInfo()
-            .getNetworkSettings()
-            .getNetworks()
-            .values()
-            .iterator()
-            .next()
-            .getIpAddress();
-    return "enode://" + publicKeys.get(0) + "@" + bootnodeIp + ":" + P2P_PORT;
+  private String getBootnodeUri(final String field) {
+    final GenericContainer<?> bootnode = besuContainers.get(0);
+    final String[] uriHolder = new String[1];
+    await()
+        .atMost(Duration.ofSeconds(30))
+        .pollInterval(Duration.ofSeconds(1))
+        .untilAsserted(
+            () -> {
+              final JsonNode result = adminNodeInfo(bootnode);
+              assertThat(result.has(field))
+                  .withFailMessage("admin_nodeInfo response missing '%s' field: %s", field, result)
+                  .isTrue();
+              uriHolder[0] = result.get(field).asText();
+            });
+    return uriHolder[0];
   }
 
-  private void startValidatorNode(final int nodeIndex, final String bootnodeEnodeUrl) {
+  private static JsonNode adminNodeInfo(final GenericContainer<?> container)
+      throws IOException, InterruptedException {
+    final int port = container.getMappedPort(RPC_PORT);
+    final HttpRequest request =
+        HttpRequest.newBuilder()
+            .uri(URI.create("http://localhost:" + port))
+            .header("Content-Type", "application/json")
+            .POST(
+                HttpRequest.BodyPublishers.ofString(
+                    "{\"jsonrpc\":\"2.0\",\"method\":\"admin_nodeInfo\",\"params\":[],\"id\":1}"))
+            .timeout(Duration.ofSeconds(10))
+            .build();
+    final String body = HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString()).body();
+    final JsonNode json = MAPPER.readTree(body);
+    assertThat(json.has("result")).withFailMessage("admin_nodeInfo RPC error: %s", body).isTrue();
+    return json.get("result");
+  }
+
+  private void startValidatorNode(final int nodeIndex, final String bootnodeUri) {
     final ToStringConsumer logConsumer = new ToStringConsumer();
 
     final GenericContainer<?> container =
@@ -278,7 +322,7 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
             .withCreateContainerCmdModifier(
                 cmd -> {
                   cmd.withEntrypoint("/bin/sh", "-c");
-                  cmd.withCmd(besuCommand(bootnodeEnodeUrl));
+                  cmd.withCmd(besuCommand(bootnodeUri));
                 })
             .withLogConsumer(logConsumer)
             .waitingFor(
@@ -289,7 +333,7 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
     besuContainers.add(container);
   }
 
-  private String besuCommand(final String bootnodeEnodeUrl) {
+  private String besuCommand(final String bootnodeUri) {
     final StringBuilder cmd = new StringBuilder();
     cmd.append(INSTALL_PLUGIN_CMD);
     cmd.append(" && /entrypoint-besu.sh");
@@ -300,14 +344,22 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
     cmd.append(" --plugin-hsm-key-alias=testkey");
     cmd.append(" --plugin-hsm-ec-curve=").append(ecCurve);
     cmd.append(" --rpc-http-enabled");
-    cmd.append(" --rpc-http-api=ETH,NET,QBFT");
+    cmd.append(" --rpc-http-api=ETH,NET,QBFT,ADMIN");
     cmd.append(" --rpc-http-host=0.0.0.0");
     cmd.append(" --host-allowlist=*");
     cmd.append(" --p2p-port=").append(P2P_PORT);
     cmd.append(" --min-gas-price=0");
     cmd.append(" --profile=ENTERPRISE");
-    if (bootnodeEnodeUrl != null) {
-      cmd.append(" --bootnodes=").append(bootnodeEnodeUrl);
+    // Bind/advertise the container's own IPv4 so peer URIs (enode/ENR) contain a
+    // network-reachable address (AUTO mode otherwise tries public-IP discovery).
+    // `hostname -i` may emit IPv6 first; filter the first IPv4 from the output.
+    cmd.append(
+        " --p2p-host=\"$(hostname -i | grep -oE '[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+' | head -1)\"");
+    if (v5Discovery) {
+      cmd.append(" --Xv5-discovery-enabled");
+    }
+    if (bootnodeUri != null) {
+      cmd.append(" --bootnodes=").append(bootnodeUri);
     }
     return cmd.toString();
   }
