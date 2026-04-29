@@ -208,7 +208,11 @@ abstract class JcaHsmProvider implements HsmProvider {
 
   private static void validatePartyKeyOnCurve(final ECPoint point, final ECCurve bcCurve) {
     try {
-      bcCurve.createPoint(point.getAffineX(), point.getAffineY()).normalize();
+      final org.bouncycastle.math.ec.ECPoint bcPoint =
+          bcCurve.createPoint(point.getAffineX(), point.getAffineY());
+      if (!bcPoint.isValid()) {
+        throw new SecurityModuleException("Party key is not a valid point on the configured curve");
+      }
     } catch (final IllegalArgumentException e) {
       throw new SecurityModuleException(
           "Party key is not a valid point on the configured curve", e);

@@ -263,7 +263,7 @@ class HsmSecurityModuleCryptoTest {
 
     assertThatThrownBy(() -> module.calculateECDHKeyAgreementCompressed(badParty))
         .isInstanceOf(SecurityModuleException.class)
-        .hasStackTraceContaining("Point not on curve");
+        .hasMessageContaining("Party key is not a valid point on the configured curve");
   }
 
   // -- curve mismatch test --
