@@ -47,6 +47,7 @@ abstract class JcaHsmProvider implements HsmProvider {
   protected final Provider provider;
   private final PrivateKey privateKey;
   private final PublicKey publicKey;
+  private final org.bouncycastle.math.ec.ECPoint ourPubKeyBc;
   private final String signatureAlgorithm;
   private final EcCurveParameters curveParams;
   private final boolean useP1363;
@@ -76,6 +77,7 @@ abstract class JcaHsmProvider implements HsmProvider {
     this.publicKey = validatedPublicKey::getW;
     this.signatureUtil = new SignatureUtil(curveParams);
     this.curveParams = curveParams;
+    this.ourPubKeyBc = signatureUtil.jcePointToBCPoint(validatedPublicKey.getW());
     this.useP1363 = probeP1363Support();
     this.signatureAlgorithm = useP1363 ? "NONEwithECDSAinP1363Format" : "NONEWithECDSA";
     LOG.info("Using signature algorithm: {}", signatureAlgorithm);
@@ -154,6 +156,10 @@ abstract class JcaHsmProvider implements HsmProvider {
       // Compute probe point Q' = Q + G (EC point addition in software)
       var bcPartyPoint = signatureUtil.jcePointToBCPoint(partyKey.getW());
       var probePoint = bcPartyPoint.add(curveParams.getBCGenPoint()).normalize();
+      if (probePoint.isInfinity()) {
+        throw new SecurityModuleException(
+            "Probe point Q+G is the point at infinity (party key equals -G)");
+      }
 
       // Second ECDH call with probe point through HSM
       final ECPoint probeJcaPoint =
@@ -164,8 +170,11 @@ abstract class JcaHsmProvider implements HsmProvider {
 
       // Determine correct y-parity
       // d*(Q+G) = d*Q + d*G = P + P_us, so check which candidate satisfies this
-      final var ourPubKeyBc = signatureUtil.jcePointToBCPoint(publicKey.getW());
       final var sumEven = candidateEven.add(ourPubKeyBc).normalize();
+      if (sumEven.isInfinity()) {
+        throw new SecurityModuleException(
+            "Sum point candidateEven + ourPubKey is the point at infinity");
+      }
       final var sumEvenX = sumEven.getAffineXCoord().toBigInteger();
 
       if (toBytes32(sumEvenX).equals(xVerify)) {
