@@ -135,16 +135,18 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
   @Override
   public void afterAll(final ExtensionContext context) {
     if (besuContainers != null) {
-      for (int i = 0; i < besuContainers.size(); i++) {
-        final GenericContainer<?> c = besuContainers.get(i);
-        System.err.println("===== besu-node-" + i + " logs (begin) =====");
-        try {
-          System.err.println(
-              c.getLogs(OutputFrame.OutputType.STDOUT, OutputFrame.OutputType.STDERR));
-        } catch (final Exception e) {
-          System.err.println("Failed to fetch logs for besu-node-" + i + ": " + e);
+      if (shouldDumpContainerLogs()) {
+        for (int i = 0; i < besuContainers.size(); i++) {
+          final GenericContainer<?> c = besuContainers.get(i);
+          System.err.println("===== besu-node-" + i + " logs (begin) =====");
+          try {
+            System.err.println(
+                c.getLogs(OutputFrame.OutputType.STDOUT, OutputFrame.OutputType.STDERR));
+          } catch (final Exception e) {
+            System.err.println("Failed to fetch logs for besu-node-" + i + ": " + e);
+          }
+          System.err.println("===== besu-node-" + i + " logs (end) =====");
         }
-        System.err.println("===== besu-node-" + i + " logs (end) =====");
       }
       besuContainers.forEach(GenericContainer::stop);
     }
@@ -170,6 +172,16 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
       }
       deleteDirectory(tempDir);
     }
+  }
+
+  /**
+   * Container logs are dumped to stderr only when GitHub Actions debug logging is enabled (Re-run
+   * with debug logging). The same flags work locally: {@code RUNNER_DEBUG=1 ./gradlew
+   * integrationTest}.
+   */
+  private static boolean shouldDumpContainerLogs() {
+    return "1".equals(System.getenv("RUNNER_DEBUG"))
+        || "true".equals(System.getenv("ACTIONS_STEP_DEBUG"));
   }
 
   private static void deleteDirectory(final Path dir) {

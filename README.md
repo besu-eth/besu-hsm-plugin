@@ -250,9 +250,19 @@ Instructions for how to get started with developing on the Besu HSM Plugin codeb
 ./gradlew integrationTest
 ```
 
+> **Container logs:** Integration tests are quiet by default. To dump full container
+> logs to stderr — useful when an integration test fails locally, or when re-running
+> a failed GitHub Actions job with [Enable debug logging] — set `RUNNER_DEBUG=1`:
+>
+> ```bash
+> RUNNER_DEBUG=1 ./gradlew integrationTest
+> ```
+
 > **Note:** Integration tests build the SoftHSM2 image from `docker/softhsm2/Dockerfile`,
 > pinning `hyperledger/besu` to the version declared in `gradle/libs.versions.toml`
 > (`besu = "..."`). Bumping the catalog automatically updates the integration-test image.
+
+[Enable debug logging]: https://docs.github.com/en/actions/how-tos/monitor-workflows/enable-debug-logging
 
 [Besu HSM Plugin Issues]: https://github.com/besu-eth/besu-hsm-plugin/issues
 [Besu channel on Discord]: https://discord.com/invite/hyperledger
