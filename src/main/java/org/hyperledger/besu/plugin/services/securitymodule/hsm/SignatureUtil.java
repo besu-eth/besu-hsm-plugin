@@ -136,6 +136,15 @@ final class SignatureUtil {
     }
   }
 
+  /**
+   * Converts a JCA {@link ECPoint} (affine coordinates) to a BouncyCastle {@link
+   * org.bouncycastle.math.ec.ECPoint} on the configured curve, for use in software EC arithmetic
+   * (point addition, negation, etc.).
+   *
+   * @param jcaPoint the JCA point; must be an affine, on-curve point (caller validates)
+   * @return the equivalent BouncyCastle point on the configured curve
+   * @throws IllegalArgumentException if {@code jcaPoint} is not on the configured curve
+   */
   org.bouncycastle.math.ec.ECPoint jcePointToBCPoint(final ECPoint jcaPoint) {
     return curveParams.getBCCurve().createPoint(jcaPoint.getAffineX(), jcaPoint.getAffineY());
   }

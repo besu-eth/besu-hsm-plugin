@@ -29,7 +29,6 @@ import java.security.spec.ECPoint;
 import javax.crypto.KeyAgreement;
 import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
-import org.bouncycastle.math.ec.ECCurve;
 import org.hyperledger.besu.plugin.services.securitymodule.SecurityModuleException;
 import org.hyperledger.besu.plugin.services.securitymodule.data.PublicKey;
 import org.slf4j.Logger;
@@ -130,22 +129,35 @@ abstract class JcaHsmProvider implements HsmProvider {
   public Bytes32 calculateECDHKeyAgreement(final PublicKey partyKey) {
     LOG.debug("Calculating ECDH key agreement ...");
     try {
+      validatePartyKeyOnCurve(partyKey.getW());
       final KeyAgreement keyAgreement = KeyAgreement.getInstance(KEY_AGREEMENT_ALGORITHM, provider);
       keyAgreement.init(privateKey);
       keyAgreement.doPhase(signatureUtil.ecPointToJcePublicKey(partyKey.getW()), true);
       return Bytes32.wrap(keyAgreement.generateSecret());
+    } catch (final SecurityModuleException e) {
+      throw e;
     } catch (final Exception e) {
       throw new SecurityModuleException("Error calculating ECDH key agreement", e);
     }
   }
 
+  /**
+   * {@inheritDoc}
+   *
+   * <p>PKCS#11's {@code CKM_ECDH1_DERIVE} returns only the x-coordinate of the shared point, so the
+   * y-parity needed for SEC1 compression is recovered with a probe-point trick: a second ECDH
+   * against {@code Q + G} lets us pick between the even-y and odd-y candidate by checking which one
+   * satisfies {@code d·(Q+G) = sharedPoint + ourPubKey}. This costs one extra HSM round-trip per
+   * call.
+   */
   @Override
   public Bytes calculateECDHKeyAgreementCompressed(final PublicKey partyKey) {
     LOG.debug("Calculating compressed ECDH key agreement");
     try {
-      validatePartyKeyOnCurve(partyKey.getW(), curveParams.getBCCurve());
+      final ECPoint partyEcPoint = partyKey.getW();
+      validatePartyKeyOnCurve(partyEcPoint);
 
-      final Bytes32 xCoord = calculateECDHKeyAgreement(partyKey);
+      final Bytes32 xCoord = calculateECDHKeyAgreement(() -> partyEcPoint);
 
       // recover even-y candidate point from x using the curve equation
       final byte[] compressedEven = new byte[33];
@@ -154,8 +166,8 @@ abstract class JcaHsmProvider implements HsmProvider {
       final var candidateEven = curveParams.getBCCurve().decodePoint(compressedEven);
 
       // Compute probe point Q' = Q + G (EC point addition in software)
-      var bcPartyPoint = signatureUtil.jcePointToBCPoint(partyKey.getW());
-      var probePoint = bcPartyPoint.add(curveParams.getBCGenPoint()).normalize();
+      final var bcPartyPoint = signatureUtil.jcePointToBCPoint(partyEcPoint);
+      final var probePoint = bcPartyPoint.add(curveParams.getBCGenPoint()).normalize();
       if (probePoint.isInfinity()) {
         // Q == -G: shared point d*Q = d*(-G) = -ourPubKey; no second ECDH needed.
         return Bytes.wrap(ourPubKeyBc.negate().normalize().getEncoded(true));
@@ -216,13 +228,13 @@ abstract class JcaHsmProvider implements HsmProvider {
     return Bytes32.leftPad(Bytes.wrap(value.toByteArray()).trimLeadingZeros());
   }
 
-  private static void validatePartyKeyOnCurve(final ECPoint point, final ECCurve bcCurve) {
+  private void validatePartyKeyOnCurve(final ECPoint point) {
     if (point == null || point.equals(ECPoint.POINT_INFINITY)) {
       throw new SecurityModuleException("Party key is not a valid point on the configured curve");
     }
     try {
       final org.bouncycastle.math.ec.ECPoint bcPoint =
-          bcCurve.createPoint(point.getAffineX(), point.getAffineY());
+          curveParams.getBCCurve().createPoint(point.getAffineX(), point.getAffineY());
       if (!bcPoint.isValid()) {
         throw new SecurityModuleException("Party key is not a valid point on the configured curve");
       }

@@ -31,6 +31,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.extension.AfterAllCallback;
 import org.junit.jupiter.api.extension.BeforeAllCallback;
 import org.junit.jupiter.api.extension.ExtensionContext;
@@ -286,7 +287,7 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
 
   private String getBootnodeUri(final String field) {
     final GenericContainer<?> bootnode = besuContainers.get(0);
-    final String[] uriHolder = new String[1];
+    final AtomicReference<String> uri = new AtomicReference<>();
     await()
         .atMost(Duration.ofSeconds(30))
         .pollInterval(Duration.ofSeconds(1))
@@ -296,9 +297,9 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
               assertThat(result.has(field))
                   .withFailMessage("admin_nodeInfo response missing '%s' field: %s", field, result)
                   .isTrue();
-              uriHolder[0] = result.get(field).asText();
+              uri.set(result.get(field).asText());
             });
-    return uriHolder[0];
+    return uri.get();
   }
 
   private static JsonNode adminNodeInfo(final GenericContainer<?> container)

@@ -36,7 +36,8 @@ final class EcCurveParameters {
   EcCurveParameters(final String curveName) {
     final X9ECParameters params = ECNamedCurveTable.getByName(curveName);
     if (params == null) {
-      throw new IllegalArgumentException("Unsupported EC curve: " + curveName);
+      throw new IllegalArgumentException(
+          "Unsupported EC curve: " + curveName + ". Supported values: secp256k1, secp256r1");
     }
     this.curveName = curveName;
     ecCurve = params.getCurve();
@@ -67,10 +68,12 @@ final class EcCurveParameters {
     return halfCurveOrder;
   }
 
+  /** Returns the BouncyCastle curve, used for software EC arithmetic outside the HSM. */
   ECCurve getBCCurve() {
     return ecCurve;
   }
 
+  /** Returns the BouncyCastle generator point of the curve, used for software EC arithmetic. */
   ECPoint getBCGenPoint() {
     return generatorPoint;
   }
