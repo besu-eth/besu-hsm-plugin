@@ -57,7 +57,7 @@ interface HsmProvider extends AutoCloseable {
    * material for HKDF key derivation
    *
    * @param partyKey the key with which an agreement is to be created.
-   * @return he compressed EC point in SEC1 format
+   * @return the compressed EC point in SEC1 format
    */
   Bytes calculateECDHKeyAgreementCompressed(PublicKey partyKey);
 
