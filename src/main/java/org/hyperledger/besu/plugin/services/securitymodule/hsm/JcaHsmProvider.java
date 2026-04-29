@@ -157,8 +157,8 @@ abstract class JcaHsmProvider implements HsmProvider {
       var bcPartyPoint = signatureUtil.jcePointToBCPoint(partyKey.getW());
       var probePoint = bcPartyPoint.add(curveParams.getBCGenPoint()).normalize();
       if (probePoint.isInfinity()) {
-        throw new SecurityModuleException(
-            "Probe point Q+G is the point at infinity (party key equals -G)");
+        // Q == -G: shared point d*Q = d*(-G) = -ourPubKey; no second ECDH needed.
+        return Bytes.wrap(ourPubKeyBc.negate().normalize().getEncoded(true));
       }
 
       // Second ECDH call with probe point through HSM
@@ -168,20 +168,30 @@ abstract class JcaHsmProvider implements HsmProvider {
               probePoint.getAffineYCoord().toBigInteger());
       final Bytes32 xVerify = calculateECDHKeyAgreement(() -> probeJcaPoint);
 
-      // Determine correct y-parity
-      // d*(Q+G) = d*Q + d*G = P + P_us, so check which candidate satisfies this
+      // Determine correct y-parity by checking both candidates against xVerify.
+      // d*(Q+G) = d*Q + d*G = sharedPoint + ourPubKey, so the correct candidate
+      // is the one whose sum with ourPubKey has x-coordinate xVerify. Either sum
+      // can be the point at infinity (when the candidate equals -ourPubKey),
+      // which we treat as a non-match rather than an error.
+      final var candidateOdd = candidateEven.negate();
       final var sumEven = candidateEven.add(ourPubKeyBc).normalize();
-      if (sumEven.isInfinity()) {
-        throw new SecurityModuleException(
-            "Sum point candidateEven + ourPubKey is the point at infinity");
-      }
-      final var sumEvenX = sumEven.getAffineXCoord().toBigInteger();
+      final var sumOdd = candidateOdd.add(ourPubKeyBc).normalize();
 
-      if (toBytes32(sumEvenX).equals(xVerify)) {
-        return Bytes.wrap(candidateEven.getEncoded(true));
-      } else {
-        return Bytes.wrap(candidateEven.negate().getEncoded(true));
+      final boolean evenMatches =
+          !sumEven.isInfinity()
+              && toBytes32(sumEven.getAffineXCoord().toBigInteger()).equals(xVerify);
+      final boolean oddMatches =
+          !sumOdd.isInfinity()
+              && toBytes32(sumOdd.getAffineXCoord().toBigInteger()).equals(xVerify);
+
+      if (evenMatches == oddMatches) {
+        throw new SecurityModuleException(
+            "Unable to determine correct y-parity for compressed ECDH key agreement");
       }
+
+      return evenMatches
+          ? Bytes.wrap(candidateEven.getEncoded(true))
+          : Bytes.wrap(candidateOdd.getEncoded(true));
     } catch (final SecurityModuleException e) {
       throw e;
     } catch (final Exception e) {
@@ -207,6 +217,9 @@ abstract class JcaHsmProvider implements HsmProvider {
   }
 
   private static void validatePartyKeyOnCurve(final ECPoint point, final ECCurve bcCurve) {
+    if (point == null || point.equals(ECPoint.POINT_INFINITY)) {
+      throw new SecurityModuleException("Party key is not a valid point on the configured curve");
+    }
     try {
       final org.bouncycastle.math.ec.ECPoint bcPoint =
           bcCurve.createPoint(point.getAffineX(), point.getAffineY());

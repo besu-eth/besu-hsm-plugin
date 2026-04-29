@@ -266,6 +266,48 @@ class HsmSecurityModuleCryptoTest {
         .hasMessageContaining("Party key is not a valid point on the configured curve");
   }
 
+  @Test
+  void compressedEcdhRejectsPartyKeyAtInfinity() {
+    final JcaHsmProvider module =
+        createTestProvider(provider, k1PrivateKey, k1PublicKey, SECP256K1);
+    final PublicKey infinityParty = () -> java.security.spec.ECPoint.POINT_INFINITY;
+
+    assertThatThrownBy(() -> module.calculateECDHKeyAgreementCompressed(infinityParty))
+        .isInstanceOf(SecurityModuleException.class)
+        .hasMessageContaining("Party key is not a valid point on the configured curve");
+  }
+
+  @Test
+  void compressedEcdhRejectsPartyKeyWithNullPoint() {
+    final JcaHsmProvider module =
+        createTestProvider(provider, k1PrivateKey, k1PublicKey, SECP256K1);
+    final PublicKey nullParty = () -> null;
+
+    assertThatThrownBy(() -> module.calculateECDHKeyAgreementCompressed(nullParty))
+        .isInstanceOf(SecurityModuleException.class)
+        .hasMessageContaining("Party key is not a valid point on the configured curve");
+  }
+
+  @Test
+  void secp256k1CompressedEcdhHandlesPartyKeyEqualsNegatedGenerator() {
+    assertHandlesPartyKeyEqualsNegatedGenerator(k1PrivateKey, k1PublicKey, SECP256K1);
+  }
+
+  @Test
+  void secp256r1CompressedEcdhHandlesPartyKeyEqualsNegatedGenerator() {
+    assertHandlesPartyKeyEqualsNegatedGenerator(r1PrivateKey, r1PublicKey, SECP256R1);
+  }
+
+  @Test
+  void secp256k1CompressedEcdhHandlesPartyKeyEqualsGenerator() {
+    assertHandlesPartyKeyEqualsGenerator(k1PrivateKey, k1PublicKey, SECP256K1);
+  }
+
+  @Test
+  void secp256r1CompressedEcdhHandlesPartyKeyEqualsGenerator() {
+    assertHandlesPartyKeyEqualsGenerator(r1PrivateKey, r1PublicKey, SECP256R1);
+  }
+
   // -- curve mismatch test --
 
   @Test
@@ -327,5 +369,50 @@ class HsmSecurityModuleCryptoTest {
     final org.bouncycastle.math.ec.ECPoint shared =
         ourBcPoint.multiply(peerPriv.getS()).normalize();
     return Bytes.wrap(shared.getEncoded(true));
+  }
+
+  private static void assertHandlesPartyKeyEqualsNegatedGenerator(
+      final PrivateKey ourPrivateKey,
+      final ECPublicKey ourPublicKey,
+      final EcCurveParameters curveParams) {
+    final JcaHsmProvider module =
+        createTestProvider(provider, ourPrivateKey, ourPublicKey, curveParams);
+    final org.bouncycastle.math.ec.ECPoint negatedG =
+        curveParams.getBCGenPoint().negate().normalize();
+    final java.security.spec.ECPoint partyPoint =
+        new java.security.spec.ECPoint(
+            negatedG.getAffineXCoord().toBigInteger(), negatedG.getAffineYCoord().toBigInteger());
+    final PublicKey partyKey = () -> partyPoint;
+
+    final Bytes compressed = module.calculateECDHKeyAgreementCompressed(partyKey);
+
+    final org.bouncycastle.math.ec.ECPoint ourBcPoint =
+        curveParams
+            .getBCCurve()
+            .createPoint(ourPublicKey.getW().getAffineX(), ourPublicKey.getW().getAffineY());
+    final Bytes expected = Bytes.wrap(ourBcPoint.negate().normalize().getEncoded(true));
+    assertThat(compressed).isEqualTo(expected);
+  }
+
+  private static void assertHandlesPartyKeyEqualsGenerator(
+      final PrivateKey ourPrivateKey,
+      final ECPublicKey ourPublicKey,
+      final EcCurveParameters curveParams) {
+    final JcaHsmProvider module =
+        createTestProvider(provider, ourPrivateKey, ourPublicKey, curveParams);
+    final org.bouncycastle.math.ec.ECPoint g = curveParams.getBCGenPoint().normalize();
+    final java.security.spec.ECPoint partyPoint =
+        new java.security.spec.ECPoint(
+            g.getAffineXCoord().toBigInteger(), g.getAffineYCoord().toBigInteger());
+    final PublicKey partyKey = () -> partyPoint;
+
+    final Bytes compressed = module.calculateECDHKeyAgreementCompressed(partyKey);
+
+    final org.bouncycastle.math.ec.ECPoint ourBcPoint =
+        curveParams
+            .getBCCurve()
+            .createPoint(ourPublicKey.getW().getAffineX(), ourPublicKey.getW().getAffineY());
+    final Bytes expected = Bytes.wrap(ourBcPoint.normalize().getEncoded(true));
+    assertThat(compressed).isEqualTo(expected);
   }
 }
