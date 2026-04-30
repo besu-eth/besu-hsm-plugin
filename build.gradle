@@ -53,8 +53,8 @@ besuPlugin {
 dependencies {
   errorprone libs.errorprone.core
 
-  // Use JUnit Jupiter for testing.
-  testImplementation libs.junit.jupiter
+  // Use JUnit Jupiter for testing (version managed by Besu plugin BOM).
+  testImplementation 'org.junit.jupiter:junit-jupiter'
   testImplementation libs.assertj.core
   testImplementation 'org.mockito:mockito-core'
   testImplementation 'org.mockito:mockito-junit-jupiter'
