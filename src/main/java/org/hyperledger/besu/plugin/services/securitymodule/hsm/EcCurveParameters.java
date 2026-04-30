@@ -20,6 +20,8 @@ import org.bouncycastle.asn1.x9.ECNamedCurveTable;
 import org.bouncycastle.asn1.x9.X9ECParameters;
 import org.bouncycastle.crypto.params.ECDomainParameters;
 import org.bouncycastle.jce.spec.ECNamedCurveSpec;
+import org.bouncycastle.math.ec.ECCurve;
+import org.bouncycastle.math.ec.ECPoint;
 
 /** Holds EC curve parameters (order, half-order, JCA parameter spec) for a named curve. */
 final class EcCurveParameters {
@@ -28,6 +30,8 @@ final class EcCurveParameters {
   private final ECParameterSpec paramSpec;
   private final BigInteger curveOrder;
   private final BigInteger halfCurveOrder;
+  private final ECCurve ecCurve;
+  private final ECPoint generatorPoint;
 
   EcCurveParameters(final String curveName) {
     final X9ECParameters params = ECNamedCurveTable.getByName(curveName);
@@ -36,8 +40,10 @@ final class EcCurveParameters {
           "Unsupported EC curve: " + curveName + ". Supported values: secp256k1, secp256r1");
     }
     this.curveName = curveName;
+    ecCurve = params.getCurve();
+    generatorPoint = params.getG();
     final ECDomainParameters ecParams =
-        new ECDomainParameters(params.getCurve(), params.getG(), params.getN(), params.getH());
+        new ECDomainParameters(ecCurve, generatorPoint, params.getN(), params.getH());
     this.paramSpec =
         new ECNamedCurveSpec(
             curveName, ecParams.getCurve(), ecParams.getG(), ecParams.getN(), ecParams.getH());
@@ -60,5 +66,15 @@ final class EcCurveParameters {
 
   BigInteger getHalfCurveOrder() {
     return halfCurveOrder;
+  }
+
+  /** Returns the BouncyCastle curve, used for software EC arithmetic outside the HSM. */
+  ECCurve getBCCurve() {
+    return ecCurve;
+  }
+
+  /** Returns the BouncyCastle generator point of the curve, used for software EC arithmetic. */
+  ECPoint getBCGenPoint() {
+    return generatorPoint;
   }
 }

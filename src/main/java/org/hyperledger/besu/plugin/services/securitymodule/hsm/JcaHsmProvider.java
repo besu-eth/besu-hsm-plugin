@@ -17,6 +17,7 @@ package org.hyperledger.besu.plugin.services.securitymodule.hsm;
 import static org.hyperledger.besu.plugin.services.securitymodule.hsm.Validations.requireNonNull;
 
 import com.google.common.annotations.VisibleForTesting;
+import java.math.BigInteger;
 import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
 import java.security.Provider;
@@ -24,7 +25,9 @@ import java.security.Security;
 import java.security.Signature;
 import java.security.interfaces.ECPublicKey;
 import java.security.spec.ECParameterSpec;
+import java.security.spec.ECPoint;
 import javax.crypto.KeyAgreement;
+import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
 import org.hyperledger.besu.plugin.services.securitymodule.SecurityModuleException;
 import org.hyperledger.besu.plugin.services.securitymodule.data.PublicKey;
@@ -39,11 +42,15 @@ import org.slf4j.LoggerFactory;
 abstract class JcaHsmProvider implements HsmProvider {
   private static final Logger LOG = LoggerFactory.getLogger(JcaHsmProvider.class);
   private static final String KEY_AGREEMENT_ALGORITHM = "ECDH";
+  private static final int COORDINATE_BYTES = 32;
+  private static final int COMPRESSED_POINT_BYTES = COORDINATE_BYTES + 1;
 
   protected final Provider provider;
   private final PrivateKey privateKey;
   private final PublicKey publicKey;
+  private final org.bouncycastle.math.ec.ECPoint ourPubKeyBc;
   private final String signatureAlgorithm;
+  private final EcCurveParameters curveParams;
   private final boolean useP1363;
   private final SignatureUtil signatureUtil;
 
@@ -70,6 +77,10 @@ abstract class JcaHsmProvider implements HsmProvider {
         validatedPublicKey, requireNonNull(curveParams, "curveParams must not be null"));
     this.publicKey = validatedPublicKey::getW;
     this.signatureUtil = new SignatureUtil(curveParams);
+    this.curveParams = curveParams;
+    final ECPoint ourPubPoint = validatedPublicKey.getW();
+    validatePointOnCurve(ourPubPoint);
+    this.ourPubKeyBc = signatureUtil.jcePointToBCPoint(ourPubPoint);
     this.useP1363 = probeP1363Support();
     this.signatureAlgorithm = useP1363 ? "NONEwithECDSAinP1363Format" : "NONEWithECDSA";
     LOG.info("Using signature algorithm: {}", signatureAlgorithm);
@@ -121,13 +132,123 @@ abstract class JcaHsmProvider implements HsmProvider {
   @Override
   public Bytes32 calculateECDHKeyAgreement(final PublicKey partyKey) {
     LOG.debug("Calculating ECDH key agreement ...");
+    final ECPoint partyEcPoint = partyKey.getW();
+    validatePointOnCurve(partyEcPoint);
+    return calculateECDHKeyAgreementInternal(partyEcPoint);
+  }
+
+  private Bytes32 calculateECDHKeyAgreementInternal(final ECPoint partyEcPoint) {
     try {
       final KeyAgreement keyAgreement = KeyAgreement.getInstance(KEY_AGREEMENT_ALGORITHM, provider);
       keyAgreement.init(privateKey);
-      keyAgreement.doPhase(signatureUtil.ecPointToJcePublicKey(partyKey.getW()), true);
+      keyAgreement.doPhase(signatureUtil.ecPointToJcePublicKey(partyEcPoint), true);
       return Bytes32.wrap(keyAgreement.generateSecret());
+    } catch (final SecurityModuleException e) {
+      throw e;
     } catch (final Exception e) {
       throw new SecurityModuleException("Error calculating ECDH key agreement", e);
+    }
+  }
+
+  /**
+   * {@inheritDoc}
+   *
+   * <p>PKCS#11's {@code CKM_ECDH1_DERIVE} returns only the x-coordinate of the shared point, so the
+   * y-parity needed for SEC1 compression is recovered with a probe-point trick: a second ECDH
+   * against {@code Q + G} lets us pick between the even-y and odd-y candidate by checking which one
+   * satisfies {@code d·(Q+G) = sharedPoint + ourPubKey}. This costs one extra HSM round-trip per
+   * call.
+   */
+  @Override
+  public Bytes calculateECDHKeyAgreementCompressed(final PublicKey partyKey) {
+    LOG.debug("Calculating compressed ECDH key agreement");
+    try {
+      final var partyEcPoint = partyKey.getW();
+      validatePointOnCurve(partyEcPoint);
+
+      final Bytes32 xCoord = calculateECDHKeyAgreementInternal(partyEcPoint);
+
+      // recover even-y candidate point from x using the curve equation
+      final var compressedEven = new byte[COMPRESSED_POINT_BYTES];
+      compressedEven[0] = 0x02;
+      System.arraycopy(xCoord.toArray(), 0, compressedEven, 1, COORDINATE_BYTES);
+      final var candidateEven = curveParams.getBCCurve().decodePoint(compressedEven);
+
+      // Compute probe point Q' = Q + G (EC point addition in software)
+      final var bcPartyPoint = signatureUtil.jcePointToBCPoint(partyEcPoint);
+      final var probePoint = bcPartyPoint.add(curveParams.getBCGenPoint()).normalize();
+      if (probePoint.isInfinity()) {
+        // Q == -G: shared point d*Q = d*(-G) = -ourPubKey; no second ECDH needed.
+        return Bytes.wrap(ourPubKeyBc.negate().normalize().getEncoded(true));
+      }
+
+      // Second ECDH call with probe point through HSM
+      final var probeJcaPoint =
+          new ECPoint(
+              probePoint.getAffineXCoord().toBigInteger(),
+              probePoint.getAffineYCoord().toBigInteger());
+      final Bytes32 xVerify = calculateECDHKeyAgreementInternal(probeJcaPoint);
+
+      // Determine correct y-parity by checking both candidates against xVerify.
+      // d*(Q+G) = d*Q + d*G = sharedPoint + ourPubKey, so the correct candidate
+      // is the one whose sum with ourPubKey has x-coordinate xVerify. Either sum
+      // can be the point at infinity (when the candidate equals -ourPubKey),
+      // which we treat as a non-match rather than an error.
+      final var candidateOdd = candidateEven.negate();
+      final var sumEven = candidateEven.add(ourPubKeyBc).normalize();
+      final var sumOdd = candidateOdd.add(ourPubKeyBc).normalize();
+
+      final boolean evenMatches =
+          !sumEven.isInfinity()
+              && toBytes32(sumEven.getAffineXCoord().toBigInteger()).equals(xVerify);
+      final boolean oddMatches =
+          !sumOdd.isInfinity()
+              && toBytes32(sumOdd.getAffineXCoord().toBigInteger()).equals(xVerify);
+
+      if (evenMatches == oddMatches) {
+        throw new SecurityModuleException(
+            "Unable to determine correct y-parity for compressed ECDH key agreement");
+      }
+
+      return evenMatches
+          ? Bytes.wrap(candidateEven.getEncoded(true))
+          : Bytes.wrap(candidateOdd.getEncoded(true));
+    } catch (final SecurityModuleException e) {
+      throw e;
+    } catch (final Exception e) {
+      throw new SecurityModuleException(
+          "Unexpected error while calculating compressed ECDH key agreement", e);
+    }
+  }
+
+  /**
+   * Converts a non-negative {@link BigInteger} to a 32-byte big-endian representation,
+   * right-aligning and zero-padding if the value is shorter than 32 bytes.
+   *
+   * <p>{@link BigInteger#toByteArray()} uses two's complement encoding, which may produce a leading
+   * {@code 0x00} sign byte for values with the high bit set, resulting in 33 bytes; {@link
+   * Bytes#trimLeadingZeros()} drops that, and {@link Bytes32#leftPad(Bytes)} pads shorter values to
+   * exactly 32 bytes (and rejects values that don't fit).
+   *
+   * @param value a non-negative {@link BigInteger}, typically an EC point coordinate
+   * @return a {@link Bytes32} containing the big-endian 32-byte representation of {@code value}
+   */
+  private Bytes32 toBytes32(final BigInteger value) {
+    return Bytes32.leftPad(Bytes.wrap(value.toByteArray()).trimLeadingZeros());
+  }
+
+  private void validatePointOnCurve(final ECPoint point) {
+    if (point == null || point.equals(ECPoint.POINT_INFINITY)) {
+      throw new SecurityModuleException("EC point is not on the configured curve");
+    }
+    try {
+      final var bcPoint =
+          curveParams.getBCCurve().createPoint(point.getAffineX(), point.getAffineY());
+      if (!bcPoint.isValid()) {
+        throw new SecurityModuleException("EC point is not on the configured curve");
+      }
+    } catch (final IllegalArgumentException e) {
+      throw new SecurityModuleException("EC point is not on the configured curve", e);
     }
   }
 
