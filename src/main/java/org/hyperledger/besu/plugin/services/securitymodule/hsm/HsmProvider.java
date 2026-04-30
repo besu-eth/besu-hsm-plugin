@@ -51,10 +51,10 @@ interface HsmProvider extends AutoCloseable {
   Bytes32 calculateECDHKeyAgreement(PublicKey partyKey);
 
   /**
-   * Perform ECDH key agreement returning the compressed EC point. Returns the full compressed EC
+   * Performs ECDH key agreement returning the compressed EC point. Returns the full compressed EC
    * point (SEC1 compressed format: prefix byte + x-coordinate) from the ECDH scalar multiplication.
    * This is required by protocols such as DiscV5 which use the compressed point as input keying
-   * material for HKDF key derivation
+   * material for HKDF key derivation.
    *
    * @param partyKey the key with which an agreement is to be created.
    * @return the compressed EC point in SEC1 format

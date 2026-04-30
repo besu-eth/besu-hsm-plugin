@@ -42,6 +42,8 @@ import org.slf4j.LoggerFactory;
 abstract class JcaHsmProvider implements HsmProvider {
   private static final Logger LOG = LoggerFactory.getLogger(JcaHsmProvider.class);
   private static final String KEY_AGREEMENT_ALGORITHM = "ECDH";
+  private static final int COORDINATE_BYTES = 32;
+  private static final int COMPRESSED_POINT_BYTES = COORDINATE_BYTES + 1;
 
   protected final Provider provider;
   private final PrivateKey privateKey;
@@ -130,9 +132,13 @@ abstract class JcaHsmProvider implements HsmProvider {
   @Override
   public Bytes32 calculateECDHKeyAgreement(final PublicKey partyKey) {
     LOG.debug("Calculating ECDH key agreement ...");
+    final ECPoint partyEcPoint = partyKey.getW();
+    validatePointOnCurve(partyEcPoint);
+    return calculateECDHKeyAgreementInternal(partyEcPoint);
+  }
+
+  private Bytes32 calculateECDHKeyAgreementInternal(final ECPoint partyEcPoint) {
     try {
-      final ECPoint partyEcPoint = partyKey.getW();
-      validatePointOnCurve(partyEcPoint);
       final KeyAgreement keyAgreement = KeyAgreement.getInstance(KEY_AGREEMENT_ALGORITHM, provider);
       keyAgreement.init(privateKey);
       keyAgreement.doPhase(signatureUtil.ecPointToJcePublicKey(partyEcPoint), true);
@@ -160,12 +166,12 @@ abstract class JcaHsmProvider implements HsmProvider {
       final ECPoint partyEcPoint = partyKey.getW();
       validatePointOnCurve(partyEcPoint);
 
-      final Bytes32 xCoord = calculateECDHKeyAgreement(() -> partyEcPoint);
+      final Bytes32 xCoord = calculateECDHKeyAgreementInternal(partyEcPoint);
 
       // recover even-y candidate point from x using the curve equation
-      final byte[] compressedEven = new byte[33];
+      final byte[] compressedEven = new byte[COMPRESSED_POINT_BYTES];
       compressedEven[0] = 0x02;
-      System.arraycopy(xCoord.toArray(), 0, compressedEven, 1, 32);
+      System.arraycopy(xCoord.toArray(), 0, compressedEven, 1, COORDINATE_BYTES);
       final var candidateEven = curveParams.getBCCurve().decodePoint(compressedEven);
 
       // Compute probe point Q' = Q + G (EC point addition in software)
@@ -181,7 +187,7 @@ abstract class JcaHsmProvider implements HsmProvider {
           new ECPoint(
               probePoint.getAffineXCoord().toBigInteger(),
               probePoint.getAffineYCoord().toBigInteger());
-      final Bytes32 xVerify = calculateECDHKeyAgreement(() -> probeJcaPoint);
+      final Bytes32 xVerify = calculateECDHKeyAgreementInternal(probeJcaPoint);
 
       // Determine correct y-parity by checking both candidates against xVerify.
       // d*(Q+G) = d*Q + d*G = sharedPoint + ourPubKey, so the correct candidate
@@ -227,7 +233,7 @@ abstract class JcaHsmProvider implements HsmProvider {
    * @param value a non-negative {@link BigInteger}, typically an EC point coordinate
    * @return a {@link Bytes32} containing the big-endian 32-byte representation of {@code value}
    */
-  private static Bytes32 toBytes32(final BigInteger value) {
+  private Bytes32 toBytes32(final BigInteger value) {
     return Bytes32.leftPad(Bytes.wrap(value.toByteArray()).trimLeadingZeros());
   }
 
