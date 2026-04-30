@@ -263,7 +263,7 @@ class HsmSecurityModuleCryptoTest {
 
     assertThatThrownBy(() -> module.calculateECDHKeyAgreementCompressed(badParty))
         .isInstanceOf(SecurityModuleException.class)
-        .hasMessageContaining("Party key is not a valid point on the configured curve");
+        .hasMessageContaining("EC point is not on the configured curve");
   }
 
   @Test
@@ -274,7 +274,7 @@ class HsmSecurityModuleCryptoTest {
 
     assertThatThrownBy(() -> module.calculateECDHKeyAgreementCompressed(infinityParty))
         .isInstanceOf(SecurityModuleException.class)
-        .hasMessageContaining("Party key is not a valid point on the configured curve");
+        .hasMessageContaining("EC point is not on the configured curve");
   }
 
   @Test
@@ -285,7 +285,7 @@ class HsmSecurityModuleCryptoTest {
 
     assertThatThrownBy(() -> module.calculateECDHKeyAgreementCompressed(nullParty))
         .isInstanceOf(SecurityModuleException.class)
-        .hasMessageContaining("Party key is not a valid point on the configured curve");
+        .hasMessageContaining("EC point is not on the configured curve");
   }
 
   @Test

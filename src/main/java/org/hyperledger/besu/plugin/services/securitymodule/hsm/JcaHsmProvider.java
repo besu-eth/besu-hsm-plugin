@@ -76,7 +76,9 @@ abstract class JcaHsmProvider implements HsmProvider {
     this.publicKey = validatedPublicKey::getW;
     this.signatureUtil = new SignatureUtil(curveParams);
     this.curveParams = curveParams;
-    this.ourPubKeyBc = signatureUtil.jcePointToBCPoint(validatedPublicKey.getW());
+    final ECPoint ourPubPoint = validatedPublicKey.getW();
+    validatePointOnCurve(ourPubPoint);
+    this.ourPubKeyBc = signatureUtil.jcePointToBCPoint(ourPubPoint);
     this.useP1363 = probeP1363Support();
     this.signatureAlgorithm = useP1363 ? "NONEwithECDSAinP1363Format" : "NONEWithECDSA";
     LOG.info("Using signature algorithm: {}", signatureAlgorithm);
@@ -129,10 +131,11 @@ abstract class JcaHsmProvider implements HsmProvider {
   public Bytes32 calculateECDHKeyAgreement(final PublicKey partyKey) {
     LOG.debug("Calculating ECDH key agreement ...");
     try {
-      validatePartyKeyOnCurve(partyKey.getW());
+      final ECPoint partyEcPoint = partyKey.getW();
+      validatePointOnCurve(partyEcPoint);
       final KeyAgreement keyAgreement = KeyAgreement.getInstance(KEY_AGREEMENT_ALGORITHM, provider);
       keyAgreement.init(privateKey);
-      keyAgreement.doPhase(signatureUtil.ecPointToJcePublicKey(partyKey.getW()), true);
+      keyAgreement.doPhase(signatureUtil.ecPointToJcePublicKey(partyEcPoint), true);
       return Bytes32.wrap(keyAgreement.generateSecret());
     } catch (final SecurityModuleException e) {
       throw e;
@@ -155,7 +158,7 @@ abstract class JcaHsmProvider implements HsmProvider {
     LOG.debug("Calculating compressed ECDH key agreement");
     try {
       final ECPoint partyEcPoint = partyKey.getW();
-      validatePartyKeyOnCurve(partyEcPoint);
+      validatePointOnCurve(partyEcPoint);
 
       final Bytes32 xCoord = calculateECDHKeyAgreement(() -> partyEcPoint);
 
@@ -228,19 +231,18 @@ abstract class JcaHsmProvider implements HsmProvider {
     return Bytes32.leftPad(Bytes.wrap(value.toByteArray()).trimLeadingZeros());
   }
 
-  private void validatePartyKeyOnCurve(final ECPoint point) {
+  private void validatePointOnCurve(final ECPoint point) {
     if (point == null || point.equals(ECPoint.POINT_INFINITY)) {
-      throw new SecurityModuleException("Party key is not a valid point on the configured curve");
+      throw new SecurityModuleException("EC point is not on the configured curve");
     }
     try {
       final org.bouncycastle.math.ec.ECPoint bcPoint =
           curveParams.getBCCurve().createPoint(point.getAffineX(), point.getAffineY());
       if (!bcPoint.isValid()) {
-        throw new SecurityModuleException("Party key is not a valid point on the configured curve");
+        throw new SecurityModuleException("EC point is not on the configured curve");
       }
     } catch (final IllegalArgumentException e) {
-      throw new SecurityModuleException(
-          "Party key is not a valid point on the configured curve", e);
+      throw new SecurityModuleException("EC point is not on the configured curve", e);
     }
   }
 
