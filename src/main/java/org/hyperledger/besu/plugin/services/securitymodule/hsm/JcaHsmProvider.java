@@ -163,13 +163,13 @@ abstract class JcaHsmProvider implements HsmProvider {
   public Bytes calculateECDHKeyAgreementCompressed(final PublicKey partyKey) {
     LOG.debug("Calculating compressed ECDH key agreement");
     try {
-      final ECPoint partyEcPoint = partyKey.getW();
+      final var partyEcPoint = partyKey.getW();
       validatePointOnCurve(partyEcPoint);
 
       final Bytes32 xCoord = calculateECDHKeyAgreementInternal(partyEcPoint);
 
       // recover even-y candidate point from x using the curve equation
-      final byte[] compressedEven = new byte[COMPRESSED_POINT_BYTES];
+      final var compressedEven = new byte[COMPRESSED_POINT_BYTES];
       compressedEven[0] = 0x02;
       System.arraycopy(xCoord.toArray(), 0, compressedEven, 1, COORDINATE_BYTES);
       final var candidateEven = curveParams.getBCCurve().decodePoint(compressedEven);
@@ -183,7 +183,7 @@ abstract class JcaHsmProvider implements HsmProvider {
       }
 
       // Second ECDH call with probe point through HSM
-      final ECPoint probeJcaPoint =
+      final var probeJcaPoint =
           new ECPoint(
               probePoint.getAffineXCoord().toBigInteger(),
               probePoint.getAffineYCoord().toBigInteger());
@@ -242,7 +242,7 @@ abstract class JcaHsmProvider implements HsmProvider {
       throw new SecurityModuleException("EC point is not on the configured curve");
     }
     try {
-      final org.bouncycastle.math.ec.ECPoint bcPoint =
+      final var bcPoint =
           curveParams.getBCCurve().createPoint(point.getAffineX(), point.getAffineY());
       if (!bcPoint.isValid()) {
         throw new SecurityModuleException("EC point is not on the configured curve");
