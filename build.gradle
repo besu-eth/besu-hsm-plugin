@@ -101,6 +101,9 @@ configurations {
 dependencies {
   integrationTestImplementation libs.testcontainers
   integrationTestImplementation libs.testcontainers.junit.jupiter
+  integrationTestImplementation 'org.hyperledger.besu.internal:besu-crypto-algorithms'
+  integrationTestImplementation 'org.web3j:crypto'
+  integrationTestImplementation 'org.web3j:utils'
 }
 
 tasks.register('integrationTest', Test) {

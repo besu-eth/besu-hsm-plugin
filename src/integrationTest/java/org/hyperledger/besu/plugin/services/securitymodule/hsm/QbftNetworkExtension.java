@@ -257,6 +257,12 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
       container.start();
     }
 
+    if (shouldDumpContainerLogs()) {
+      System.err.println("===== generate-genesis logs (begin) =====");
+      System.err.println(logConsumer.toUtf8String());
+      System.err.println("===== generate-genesis logs (end) =====");
+    }
+
     assertThat(logConsumer.toUtf8String()).contains("Genesis generation complete");
   }
 

@@ -14,12 +14,19 @@
  */
 package org.hyperledger.besu.plugin.services.securitymodule.hsm;
 
-import org.junit.jupiter.api.Disabled;
-import org.junit.jupiter.api.Test;
+import java.math.BigInteger;
 import org.junit.jupiter.api.extension.RegisterExtension;
+import org.web3j.crypto.RawTransaction;
 
 /** Runs the QBFT HSM integration tests using the secp256r1 curve (experimental). */
 class QbftSecp256r1IntegrationTest extends QbftHsmIntegrationTestBase {
+
+  /**
+   * Same private-key bytes as the secp256k1 sibling, but interpreted as a secp256r1 key. Genesis
+   * pre-funds the resulting r1-derived address (0x91240f5b...) when EC_CURVE=secp256r1.
+   */
+  private static final BigInteger DEV_PRIVATE_KEY =
+      new BigInteger("8f2a55949038a9610f50fb23b5883af3b4ecb3c3bb792cbcefbd1542c692be63", 16);
 
   @RegisterExtension
   static final QbftNetworkExtension NETWORK = new QbftNetworkExtension("secp256r1");
@@ -29,8 +36,13 @@ class QbftSecp256r1IntegrationTest extends QbftHsmIntegrationTestBase {
     return NETWORK;
   }
 
-  @Test
-  @Disabled("web3j TransactionEncoder uses secp256k1 signing — needs secp256r1 dev key and signer")
   @Override
-  void valueTransferProducesNonEmptyBlock() {}
+  protected String senderAddress() {
+    return Secp256r1TransactionSigner.addressFromPrivateKey(DEV_PRIVATE_KEY);
+  }
+
+  @Override
+  protected byte[] signRawTransaction(final RawTransaction tx, final long chainId) {
+    return Secp256r1TransactionSigner.sign(tx, DEV_PRIVATE_KEY, chainId);
+  }
 }
