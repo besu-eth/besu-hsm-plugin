@@ -121,16 +121,30 @@ abstract class QbftHsmIntegrationTestBase {
     assertThat(new BigInteger(result.asText().substring(2), 16).signum()).isGreaterThan(0);
   }
 
-  @Test
-  void valueTransferProducesNonEmptyBlock() throws Exception {
+  /** Hex address of the dev account funded in the test genesis. Curve-specific. */
+  protected String senderAddress() {
+    return "0xfe3b557e8fb62b89f4916b721be55ceb828dbd73";
+  }
+
+  /**
+   * Signs a legacy Ethereum transaction with the curve appropriate for the chain. Default uses
+   * web3j's secp256k1 encoder; the secp256r1 subclass overrides this.
+   */
+  protected byte[] signRawTransaction(final RawTransaction tx, final long chainId) {
     final Credentials sender =
         Credentials.create("8f2a55949038a9610f50fb23b5883af3b4ecb3c3bb792cbcefbd1542c692be63");
+    return TransactionEncoder.signMessage(tx, chainId, sender);
+  }
+
+  @Test
+  void valueTransferProducesNonEmptyBlock() throws Exception {
+    final long chainId = 1337;
 
     final JsonNode nonceResult =
         rpcResult(
             network().getContainer(0),
             "eth_getTransactionCount",
-            "[\"" + sender.getAddress() + "\", \"latest\"]");
+            "[\"" + senderAddress() + "\", \"latest\"]");
     final long nonce = Long.decode(nonceResult.asText());
 
     final RawTransaction rawTx =
@@ -141,7 +155,7 @@ abstract class QbftHsmIntegrationTestBase {
             "0x627306090abaB3A6e1400e9345bC60c78a8BEf57",
             BigInteger.valueOf(1_000_000_000_000_000_000L));
 
-    final byte[] signedBytes = TransactionEncoder.signMessage(rawTx, 1337, sender);
+    final byte[] signedBytes = signRawTransaction(rawTx, chainId);
     final String signedTxHex = Numeric.toHexString(signedBytes);
 
     final String txHash =

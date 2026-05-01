@@ -38,7 +38,19 @@ KEYS_JSON="${KEYS_JSON}]"
 
 # Build the operator config file for besu generate-blockchain-config.
 # "generate": false tells Besu to use supplied public keys instead of generating new ones.
-# Pre-fund a known account for transaction testing.
+# Pre-fund a known account for transaction testing. The default fe3b... address is the
+# Ethereum address derived from private key 8f2a55... on secp256k1. The same private key
+# treated as a secp256r1 key derives a different address (91240f...), so when EC_CURVE is
+# secp256r1 we additionally fund that secp256r1-derived address. (Reference:
+# besu/acceptance-tests/tests/src/acceptanceTest/resources/crypto/secp256r1.json)
+ALLOC_EXTRA=""
+if [ "${EC_CURVE}" = "secp256r1" ]; then
+    ALLOC_EXTRA=',
+      "91240f5b6994c7ed80f9f94b1aa847880ad3b150": {
+        "balance": "0xad78ebc5ac6200000"
+      }'
+fi
+
 TMPDIR=$(mktemp -d)
 cat > "${TMPDIR}/qbftConfigFile.json" <<EOF
 {
@@ -64,7 +76,7 @@ cat > "${TMPDIR}/qbftConfigFile.json" <<EOF
     "alloc": {
       "fe3b557e8fb62b89f4916b721be55ceb828dbd73": {
         "balance": "0xad78ebc5ac6200000"
-      }
+      }${ALLOC_EXTRA}
     }
   },
   "blockchain": {
