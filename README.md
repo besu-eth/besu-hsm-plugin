@@ -175,6 +175,9 @@ besu --security-module=hsm \
 For a complete walkthrough of setting up a QBFT network with AWS CloudHSM, see the
 [AWS CloudHSM guides](docs/aws-CloudHSM/).
 
+For a complete walkthrough with a Thales Luna HSM (PCIe / network) using the `native-pkcs11`
+path, see the [Thales Luna guide](docs/thales-luna/README.md).
+
 ## Experimental: secp256r1 Curve Support
 
 The plugin supports the secp256r1 (NIST P-256) elliptic curve as an alternative to the default
@@ -231,7 +234,7 @@ Instructions for how to get started with developing on the Besu HSM Plugin codeb
 
 ### Prerequisites
 
-* [Java 21+](https://adoptium.net/)
+* [Java 25+](https://adoptium.net/) (the plugin uses the Java 25 Foreign Function &amp; Memory API for the Luna HSM provider; Java 21 is not sufficient)
 * [Gradle](https://gradle.org/) (or use the included Gradle wrapper)
 
 ### Building

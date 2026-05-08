@@ -26,7 +26,7 @@ public class HsmCliOptions {
       names = "--plugin-" + SECURITY_MODULE_NAME + "-provider-type",
       description = "HSM provider type: ${COMPLETION-CANDIDATES} (default: ${DEFAULT-VALUE})",
       paramLabel = "<type>")
-  private HsmProviderType providerType = HsmProviderType.GENERIC_PKCS11;
+  private HsmProviderType providerType = HsmProviderType.NATIVE_PKCS11;
 
   @Option(
       names = "--plugin-" + SECURITY_MODULE_NAME + "-config-path",
@@ -70,6 +70,7 @@ public class HsmCliOptions {
   private EcCurve ecCurve = EcCurve.SECP256K1;
 
   enum HsmProviderType {
+    NATIVE_PKCS11("native-pkcs11"),
     GENERIC_PKCS11("generic-pkcs11"),
     CLOUDHSM_JCE("cloudhsm-jce");
 

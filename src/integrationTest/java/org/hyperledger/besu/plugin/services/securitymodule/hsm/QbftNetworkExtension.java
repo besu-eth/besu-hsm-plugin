@@ -76,6 +76,7 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
 
   private final String ecCurve;
   private final boolean v5Discovery;
+  private final String providerType;
   private final Path distZip;
 
   private ImageFromDockerfile image;
@@ -86,12 +87,17 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
   private List<GenericContainer<?>> besuContainers;
 
   QbftNetworkExtension(final String ecCurve) {
-    this(ecCurve, false);
+    this(ecCurve, false, "generic-pkcs11");
   }
 
   QbftNetworkExtension(final String ecCurve, final boolean v5Discovery) {
+    this(ecCurve, v5Discovery, "generic-pkcs11");
+  }
+
+  QbftNetworkExtension(final String ecCurve, final boolean v5Discovery, final String providerType) {
     this.ecCurve = ecCurve;
     this.v5Discovery = v5Discovery;
+    this.providerType = providerType;
     this.distZip = findDistZip();
   }
 
@@ -285,9 +291,16 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
             .withLogConsumer(logConsumer)
             .waitingFor(
                 Wait.forLogMessage(".*Ethereum main loop is up.*", 1)
-                    .withStartupTimeout(Duration.ofMinutes(5)));
+                    .withStartupTimeout(Duration.ofSeconds(45)));
 
-    container.start();
+    try {
+      container.start();
+    } catch (final RuntimeException e) {
+      System.err.println("===== besu-node-0 startup failed; dumping logs =====");
+      System.err.println(logConsumer.toUtf8String());
+      System.err.println("===== end logs =====");
+      throw e;
+    }
     besuContainers.add(container);
   }
 
@@ -358,6 +371,7 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
     cmd.append(" && /entrypoint-besu.sh");
     cmd.append(" --genesis-file=/data/genesis.json");
     cmd.append(" --security-module=hsm");
+    cmd.append(" --plugin-hsm-provider-type=").append(providerType);
     cmd.append(" --plugin-hsm-config-path=/etc/besu/config/pkcs11-softhsm.cfg");
     cmd.append(" --plugin-hsm-password-path=/etc/besu/config/pkcs11-hsm-password.txt");
     cmd.append(" --plugin-hsm-key-alias=testkey");
@@ -384,9 +398,20 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
   }
 
   private static Path findDistZip() {
+    // Multiple SNAPSHOT zips can accumulate when switching branches. Prefer the most recently
+    // modified one so a fresh `./gradlew distZip` always wins over stale artifacts.
     try (var stream = Files.newDirectoryStream(DIST_DIR, "besu-hsm-plugin*.zip")) {
+      Path latest = null;
+      long latestMtime = Long.MIN_VALUE;
       for (final Path path : stream) {
-        return path;
+        final long mtime = Files.getLastModifiedTime(path).toMillis();
+        if (mtime > latestMtime) {
+          latestMtime = mtime;
+          latest = path;
+        }
+      }
+      if (latest != null) {
+        return latest;
       }
     } catch (final IOException e) {
       // Fall through
