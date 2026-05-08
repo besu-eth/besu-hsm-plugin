@@ -77,6 +77,7 @@ class NativePkcs11Provider implements HsmProvider {
   private final EcCurveParameters curveParams;
   private final SignatureUtil signatureUtil;
   private final int coordinateSize;
+  private final org.bouncycastle.math.ec.ECPoint ourPubKeyBc;
 
   /**
    * Bundles parsed PKCS#11 config (subset of SunPKCS11 cfg directives we care about). Exactly one
@@ -125,6 +126,8 @@ class NativePkcs11Provider implements HsmProvider {
     this.curveParams = curveParams;
     this.signatureUtil = new SignatureUtil(curveParams);
     this.coordinateSize = (curveParams.getCurveOrder().bitLength() + 7) / 8;
+    EcPointUtils.validatePointOnCurve(validatedPoint, curveParams);
+    this.ourPubKeyBc = signatureUtil.jcePointToBCPoint(validatedPoint);
   }
 
   private static InitResult init(
@@ -180,22 +183,84 @@ class NativePkcs11Provider implements HsmProvider {
   public Bytes32 calculateECDHKeyAgreement(final PublicKey partyKey) {
     LOG.debug("Calculating ECDH key agreement via native-pkcs11 provider ...");
     final ECPoint partyPoint = partyKey.getW();
-    validatePointOnCurve(partyPoint);
-    final byte[] derWrappedPeer = derWrapPoint(partyPoint, coordinateSize);
-    final byte[] shared = nativeBinding.deriveEcdh(derWrappedPeer);
-    return Bytes32.wrap(shared);
+    EcPointUtils.validatePointOnCurve(partyPoint, curveParams);
+    return ecdhX(partyPoint);
   }
 
+  /**
+   * {@inheritDoc}
+   *
+   * <p>PKCS#11's {@code CKM_ECDH1_DERIVE} returns only the x-coordinate of the shared point, so the
+   * y-parity needed for SEC1 compression is recovered with a probe-point trick: a second ECDH
+   * against {@code Q + G} lets us pick between the even-y and odd-y candidate by checking which one
+   * satisfies {@code d·(Q+G) = sharedPoint + ourPubKey}. This costs one extra HSM round-trip per
+   * call.
+   */
   @Override
   public Bytes calculateECDHKeyAgreementCompressed(final PublicKey partyKey) {
-    // DiscV5 support is intentionally deferred for v1. The pattern matches the existing
-    // JcaHsmProvider.calculateECDHKeyAgreementCompressed: do TWO deriveEcdh calls (one with
-    // partyKey, one with partyKey + G) and run the same y-parity probe-point logic. Tracked
-    // as a follow-up task.
-    throw new UnsupportedOperationException(
-        "Compressed ECDH (DiscV5) is not yet implemented for the native-pkcs11 provider. "
-            + "DiscV5 with HSM-backed keys is currently only supported via generic-pkcs11; "
-            + "track plugin issue for native-pkcs11 DiscV5 support.");
+    LOG.debug("Calculating compressed ECDH key agreement via native-pkcs11 provider ...");
+    try {
+      final ECPoint partyEcPoint = partyKey.getW();
+      EcPointUtils.validatePointOnCurve(partyEcPoint, curveParams);
+
+      final Bytes32 xCoord = ecdhX(partyEcPoint);
+
+      // recover even-y candidate point from x using the curve equation
+      final byte[] compressedEven = new byte[1 + coordinateSize];
+      compressedEven[0] = 0x02;
+      System.arraycopy(xCoord.toArray(), 0, compressedEven, 1, coordinateSize);
+      final var candidateEven = curveParams.getBCCurve().decodePoint(compressedEven);
+
+      // Compute probe point Q' = Q + G (EC point addition in software)
+      final var bcPartyPoint = signatureUtil.jcePointToBCPoint(partyEcPoint);
+      final var probePoint = bcPartyPoint.add(curveParams.getBCGenPoint()).normalize();
+      if (probePoint.isInfinity()) {
+        // Q == -G: shared point d*Q = d*(-G) = -ourPubKey; no second ECDH needed.
+        return Bytes.wrap(ourPubKeyBc.negate().normalize().getEncoded(true));
+      }
+
+      // Second ECDH call with probe point through HSM
+      final ECPoint probeJcaPoint =
+          new ECPoint(
+              probePoint.getAffineXCoord().toBigInteger(),
+              probePoint.getAffineYCoord().toBigInteger());
+      final Bytes32 xVerify = ecdhX(probeJcaPoint);
+
+      // Determine correct y-parity by checking both candidates against xVerify.
+      // d*(Q+G) = d*Q + d*G = sharedPoint + ourPubKey, so the correct candidate
+      // is the one whose sum with ourPubKey has x-coordinate xVerify. Either sum
+      // can be the point at infinity (when the candidate equals -ourPubKey),
+      // which we treat as a non-match rather than an error.
+      final var candidateOdd = candidateEven.negate();
+      final var sumEven = candidateEven.add(ourPubKeyBc).normalize();
+      final var sumOdd = candidateOdd.add(ourPubKeyBc).normalize();
+
+      final boolean evenMatches =
+          !sumEven.isInfinity()
+              && EcPointUtils.toBytes32(sumEven.getAffineXCoord().toBigInteger()).equals(xVerify);
+      final boolean oddMatches =
+          !sumOdd.isInfinity()
+              && EcPointUtils.toBytes32(sumOdd.getAffineXCoord().toBigInteger()).equals(xVerify);
+
+      if (evenMatches == oddMatches) {
+        throw new SecurityModuleException(
+            "Unable to determine correct y-parity for compressed ECDH key agreement");
+      }
+
+      return evenMatches
+          ? Bytes.wrap(candidateEven.getEncoded(true))
+          : Bytes.wrap(candidateOdd.getEncoded(true));
+    } catch (final SecurityModuleException e) {
+      throw e;
+    } catch (final Exception e) {
+      throw new SecurityModuleException(
+          "Unexpected error while calculating compressed ECDH key agreement", e);
+    }
+  }
+
+  private Bytes32 ecdhX(final ECPoint point) {
+    final byte[] derWrappedPeer = derWrapPoint(point, coordinateSize);
+    return Bytes32.wrap(nativeBinding.deriveEcdh(derWrappedPeer));
   }
 
   @Override
@@ -286,19 +351,6 @@ class NativePkcs11Provider implements HsmProvider {
     final BigInteger x = new BigInteger(1, ecPointBytes, 1, coordSize);
     final BigInteger y = new BigInteger(1, ecPointBytes, 1 + coordSize, coordSize);
     return new ECPoint(x, y);
-  }
-
-  /**
-   * Validates the peer's EC point lies on the configured curve. Mirrors the validation in {@link
-   * JcaHsmProvider} so a malicious or misconfigured peer cannot smuggle an off-curve point through
-   * to the HSM.
-   */
-  private void validatePointOnCurve(final ECPoint point) {
-    try {
-      curveParams.getBCCurve().validatePoint(point.getAffineX(), point.getAffineY());
-    } catch (final IllegalArgumentException e) {
-      throw new SecurityModuleException("Peer EC point is not on the configured curve", e);
-    }
   }
 
   @VisibleForTesting
