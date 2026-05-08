@@ -779,14 +779,10 @@ done
 
 ## Known Limitations
 
-- **DiscV5 (compressed ECDH) is not yet supported by `native-pkcs11`.**
-  The v1 implementation only supports the regular
-  `calculateECDHKeyAgreement` used by DiscV4 and devp2p handshakes.
-  Compressed ECDH (DiscV5's y-parity-aware shared point) requires
-  running the derive recipe twice and applying the same probe-point
-  logic that `JcaHsmProvider.calculateECDHKeyAgreementCompressed` uses
-  for software providers. Tracked as a follow-up; for DiscV5
-  deployments today, use `generic-pkcs11` with a non-Luna HSM.
+- **DiscV5 is only supported on the `secp256k1` curve.** The ENR v4
+  identity scheme defined in EIP-778 mandates secp256k1, so DiscV5
+  validators on `secp256r1` are not possible regardless of provider.
+  DiscV4 and devp2p handshakes work on both curves.
 - **Per-JVM serialisation of HSM operations.** Sign and ECDH calls are
   serialised at the Java level (one PKCS#11 session per process). For a
   QBFT validator this is fine — the consensus thread is single-flight.
