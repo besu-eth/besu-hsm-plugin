@@ -7,6 +7,7 @@ flowchart TB
     classDef jca fill:#fff3cd,stroke:#b58900,color:#000
     classDef hsm fill:#ffd7a8,stroke:#cc5500,color:#000
     classDef config fill:#f8f9fa,stroke:#6c757d,color:#000
+    classDef ffm fill:#e0d5f5,stroke:#6f42c1,color:#000
     classDef future stroke-dasharray: 5 5,fill:#f8f9fa,stroke:#6c757d,color:#000
 
     besu["<b>Besu QBFT Validator</b><br/>P2P (RLPx) handshake — ECDH<br/>QBFT consensus messages — sign"]:::besu
@@ -20,6 +21,8 @@ flowchart TB
         jcaBase(["<b>JcaHsmProvider</b> «abstract»<br/>JCA-based sign + ECDH"]):::abstract
         pkcs11Impl["<b>Pkcs11Provider</b><br/>generic PKCS#11 via SunPKCS11"]:::plugin
         cloudHsmImpl["<b>CloudHsmJceProvider</b><br/>AWS CloudHSM via JCE"]:::plugin
+        nativeImpl["<b>NativePkcs11Provider</b><br/><i>default since v0.x</i><br/>any PKCS#11 HSM via Java 25 FFM<br/>(no SunPKCS11 in path)"]:::plugin
+        nativeFfm["<b>Pkcs11Ffm</b><br/>java.lang.foreign binding<br/>direct dlopen of vendor PKCS#11 lib<br/>(e.g. libCryptoki2_64.so, libsofthsm2.so)"]:::ffm
         futureImpl["<b>Vendor JCE Provider</b><br/><i>future extension point</i>"]:::future
     end
 
@@ -27,7 +30,8 @@ flowchart TB
     cloudHsmJce["<b>AWS CloudHSM</b><br/>JCE Provider"]:::jca
     vendorJce["<b>Vendor JCE Provider</b><br/>(e.g. native ECDH support)"]:::future
 
-    pkcs11Hsm["<b>PKCS#11 HSM</b><br/>SoftHSM2 · YubiHSM2 · Thales Luna<br/>nCipher · Azure Dedicated HSM<br/>Google Cloud HSM · AWS CloudHSM"]:::hsm
+    pkcs11Hsm["<b>PKCS#11 HSM</b><br/>SoftHSM2 · YubiHSM2<br/>nCipher · Azure Dedicated HSM<br/>Google Cloud HSM"]:::hsm
+    strictHsm["<b>Strict PKCS#11 v2.40 HSM</b><br/>e.g. Thales Luna 7.x<br/>(requires DER-wrapped peer pubkey<br/>and sensitive=true derived secrets;<br/>SunPKCS11 path does not work)"]:::hsm
     awsCloudHsm["<b>AWS CloudHSM Cluster</b>"]:::hsm
     vendorHsm["<b>Vendor HSM</b><br/>(PKCS#11 ECDH unsupported<br/>or vendor-specific features)"]:::future
 
@@ -37,9 +41,11 @@ flowchart TB
     api -. "PicoCLIOptions parsing" .-> secModule
     secModule --> provider
     provider -.->|implemented by| jcaBase
+    provider -.->|implemented by| nativeImpl
     jcaBase --> pkcs11Impl
     jcaBase --> cloudHsmImpl
     jcaBase -.-> futureImpl
+    nativeImpl --> nativeFfm
 
     pkcs11Impl -->|"Security.addProvider"| sunpkcs11
     cloudHsmImpl -->|"Security.addProvider"| cloudHsmJce
@@ -47,4 +53,6 @@ flowchart TB
 
     sunpkcs11 -->|"PKCS#11 native lib<br/>(e.g. libsofthsm2.so)"| pkcs11Hsm
     cloudHsmJce -->|"CloudHSM client SDK"| awsCloudHsm
+    nativeFfm -->|"PKCS#11 v2.40 calls<br/>(C_DeriveKey · C_WrapKey ·<br/>C_Decrypt · C_Sign)"| pkcs11Hsm
+    nativeFfm -->|"same call set"| strictHsm
     vendorJce -.->|"vendor protocol"| vendorHsm
