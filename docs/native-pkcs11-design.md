@@ -246,7 +246,48 @@ No Luna in CI — hardware HSMs can't run in GitHub Actions.
 Production promotion gates on a manual soak run against the dev
 Luna box; the operator guide describes the recipe.
 
-## 9. Future work
+## 9. Vendor compatibility — AWS CloudHSM is not supported
+
+A POC against AWS CloudHSM revealed that the recipe in §2 cannot be
+made to work on CloudHSM via standard PKCS#11. Documenting the
+findings here so a future maintainer doesn't repeat the dead end.
+
+CloudHSM rejects every standard path for getting the derived shared
+secret out of the HSM:
+
+- `CKM_AES_CBC` for `C_WrapKey` → `CKR_MECHANISM_INVALID (0x70)`.
+  CBC isn't on CloudHSM's wrap whitelist.
+- `CKA_SENSITIVE=false` on `C_DeriveKey` template →
+  `CKR_ATTRIBUTE_VALUE_INVALID (0x13)`. The
+  `--enable-ecdh-without-kdf` configure flag governs the KDF on the
+  ECDH output, not the sensitive-attribute policy.
+- `C_GetAttributeValue(CKA_VALUE)` on a `sensitive=true` derived
+  secret → `CKR_ATTRIBUTE_SENSITIVE (0x11)`. No same-session
+  exemption.
+- `CKM_AES_GCM` for `C_WrapKey` (v2.40 params struct, 40 bytes) →
+  `CKR_MECHANISM_PARAM_INVALID (0x71)`.
+- `CKM_AES_GCM` for `C_WrapKey` (v3.0 params struct with `ulIvBits`,
+  48 bytes) → `CKR_KEY_HANDLE_INVALID (0x60)`. Struct accepted, but
+  CloudHSM refuses the source/wrapping key combination.
+- `CKM_VENDOR_DEFINED | 0x1087` (CloudHSM's vendor GCM variant) →
+  `CKR_MECHANISM_PARAM_INVALID (0x71)` again, with an undocumented
+  params struct format.
+
+`cloudhsm-jce` works on CloudHSM because it uses CloudHSM's
+proprietary CKA-extension protocol to retrieve derived values —
+that's a CloudHSM-specific path that doesn't exist in standard
+PKCS#11. Reproducing it from a vendor-neutral FFM binding would
+require linking CloudHSM's private client SDK, which defeats the
+"one FFM path drives any PKCS#11 v2.40 HSM" design and turns this
+into a CloudHSM-specific provider — which is exactly what
+`cloudhsm-jce` already is.
+
+`native-pkcs11`'s sign path (`CKM_ECDSA`) does work on CloudHSM —
+the failure is specific to ECDH derive. But a validator that can't
+peer-handshake can't run, so practically `native-pkcs11` is unusable
+on CloudHSM. Use `cloudhsm-jce` for that HSM.
+
+## 10. Future work
 
 - **Unit-testable `Pkcs11Ffm`.** A mock-library substitute would
   let us cover close-state semantics, the deriveEcdh error-path
@@ -262,7 +303,7 @@ Luna box; the operator guide describes the recipe.
 - **Provider rename.** `generic-pkcs11` → `sunpkcs11` (or similar)
   to match the implementation. Separate PR.
 
-## 10. References
+## 11. References
 
 - [PKCS#11 v2.40 base spec](http://docs.oasis-open.org/pkcs11/pkcs11-base/v2.40/pkcs11-base-v2.40.html)
   — function-list layout, attribute and mechanism semantics, error

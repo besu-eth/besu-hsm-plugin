@@ -19,8 +19,9 @@ Pick the provider that matches your HSM. The CLI flag values listed below are wh
 
 - **`native-pkcs11`** *(default, recommended for production)* — Works with any PKCS#11 v2.40 HSM,
   including strict-spec HSMs such as **Thales Luna**. No certificate is required alongside the
-  private key on the token.
-- **`cloudhsm-jce`** *(production)* — Uses the [AWS CloudHSM JCE provider](https://docs.aws.amazon.com/cloudhsm/latest/userguide/java-library-install.html)
+  private key on the token. Not currently compatible with **AWS CloudHSM** — see Known
+  Limitations.
+- **`cloudhsm-jce`** *(production, AWS CloudHSM only)* — Uses the [AWS CloudHSM JCE provider](https://docs.aws.amazon.com/cloudhsm/latest/userguide/java-library-install.html)
   directly, with no PKCS#11 configuration file. Authenticates via the `HSM_USER` and `HSM_PASSWORD`
   environment variables.
 - **`generic-pkcs11`** *(dev/test only)* — Targets **SoftHSM2** for local development and
@@ -157,6 +158,25 @@ or static peering (`--static-nodes-file`) for secp256r1 deployments.
 PKCS#11's `CKM_ECDH1_DERIVE` returns only the x-coordinate of the ECDH shared point, so the
 plugin recovers the y-parity needed for SEC1-compressed encoding via a second ECDH against a
 probe point (`Q + G`). This costs one extra HSM round-trip per DiscV5 handshake.
+
+### `native-pkcs11` is not compatible with AWS CloudHSM
+
+`native-pkcs11`'s ECDH recipe relies on extracting the derived shared secret out of the HSM
+through standard PKCS#11 — either by `CKA_SENSITIVE=false` + `C_GetAttributeValue(CKA_VALUE)`,
+or by the wrap-then-decrypt-with-AES-KEK encrypt-decrypt-oracle pattern. AWS CloudHSM rejects
+all of these paths: it doesn't permit non-sensitive ECDH-derived secrets, doesn't permit
+`C_GetAttributeValue(CKA_VALUE)` on a sensitive secret, doesn't accept `CKM_AES_CBC` for wrap,
+and rejects the `CKM_AES_GCM` wrap params struct in any layout we tried.
+
+`cloudhsm-jce` works on CloudHSM because it uses CloudHSM's proprietary CKA-extension protocol
+to retrieve the derived value — that's a CloudHSM-specific path that doesn't exist in standard
+PKCS#11. Reproducing it from a vendor-neutral FFM binding would mean depending on CloudHSM's
+private SDK, which defeats the purpose of `native-pkcs11`.
+
+**Use `cloudhsm-jce` for AWS CloudHSM.** `native-pkcs11` is intended for Thales Luna and any
+other HSM whose PKCS#11 implementation supports the standard wrap-decrypt-oracle pattern (sign
+will work on CloudHSM via `native-pkcs11`, but ECDH — and therefore peer handshake — will fail,
+so a validator can't actually run).
 
 ## Useful Links
 
