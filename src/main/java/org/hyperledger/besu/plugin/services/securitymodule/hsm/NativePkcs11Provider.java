@@ -51,6 +51,11 @@ import org.slf4j.LoggerFactory;
  * to be associated with the private-key alias on the HSM — keys are looked up directly by {@code
  * CKA_LABEL}.
  *
+ * <p><b>Note on ignored directives:</b> SunPKCS11 {@code attributes(generate, ...) = { ... }}
+ * blocks present in the config file are silently dropped. native-pkcs11 sets PKCS#11 object
+ * attributes internally per its hardened recipe (see {@link Pkcs11Ffm}); user-supplied attribute
+ * overrides have no effect on this code path.
+ *
  * <h2>Session management</h2>
  *
  * One PKCS#11 session is opened at construction time and reused for the lifetime of the provider (=
@@ -313,6 +318,18 @@ class NativePkcs11Provider implements HsmProvider {
             "native-pkcs11 config missing 'slot = <int>' or 'slotListIndex = <int>' directive: "
                 + configPath);
       }
+      // PKCS#11 CK_SLOT_ID is unsigned — negative values are invalid.
+      if (slotId != null && slotId < 0) {
+        throw new SecurityModuleException(
+            "native-pkcs11 config 'slot' must be >= 0; got " + slotId + ": " + configPath);
+      }
+      if (slotListIndex != null && slotListIndex < 0) {
+        throw new SecurityModuleException(
+            "native-pkcs11 config 'slotListIndex' must be >= 0; got "
+                + slotListIndex
+                + ": "
+                + configPath);
+      }
       return new Pkcs11FfmConfig(libraryPath, slotId, slotListIndex);
     } catch (final IOException e) {
       throw new SecurityModuleException(
@@ -337,12 +354,13 @@ class NativePkcs11Provider implements HsmProvider {
     final CharBuffer cb = StandardCharsets.UTF_8.decode(ByteBuffer.wrap(bytes));
     Arrays.fill(bytes, (byte) 0);
     try {
+      // Match String.trim() semantics: strip chars with codepoint <= U+0020 from both ends.
       int end = cb.length();
-      while (end > 0 && Character.isWhitespace(cb.charAt(end - 1))) {
+      while (end > 0 && cb.charAt(end - 1) <= ' ') {
         end--;
       }
       int start = 0;
-      while (start < end && Character.isWhitespace(cb.charAt(start))) {
+      while (start < end && cb.charAt(start) <= ' ') {
         start++;
       }
       final char[] pin = new char[end - start];

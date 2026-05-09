@@ -242,6 +242,24 @@ class NativePkcs11ProviderTest {
   }
 
   @Test
+  void parseConfigRejectsNegativeSlot(@TempDir final Path tmp) throws IOException {
+    final Path cfg = write(tmp, "library = /usr/lib/softhsm/libsofthsm2.so", "slot = -1");
+
+    assertThatThrownBy(() -> NativePkcs11Provider.parseConfig(cfg))
+        .isInstanceOf(SecurityModuleException.class)
+        .hasMessageContaining("'slot' must be >= 0");
+  }
+
+  @Test
+  void parseConfigRejectsNegativeSlotListIndex(@TempDir final Path tmp) throws IOException {
+    final Path cfg = write(tmp, "library = /usr/lib/softhsm/libsofthsm2.so", "slotListIndex = -1");
+
+    assertThatThrownBy(() -> NativePkcs11Provider.parseConfig(cfg))
+        .isInstanceOf(SecurityModuleException.class)
+        .hasMessageContaining("'slotListIndex' must be >= 0");
+  }
+
+  @Test
   void parseEcPointRejectsEmptyArrayWithoutAioobe() {
     final byte[] empty = new byte[0];
 

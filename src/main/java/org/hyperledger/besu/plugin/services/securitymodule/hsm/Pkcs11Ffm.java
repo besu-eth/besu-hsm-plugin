@@ -158,6 +158,13 @@ final class Pkcs11Ffm implements AutoCloseable {
   private final boolean weInitialized; // whether we called C_Initialize (vs. it was already done)
   private final Object lock = new Object();
 
+  /**
+   * Set inside {@link #close()} under {@link #lock}. Read inside the same lock by every public
+   * method, which throws {@link IllegalStateException} if true. Volatile so any future
+   * non-synchronized read still sees the latest value.
+   */
+  private volatile boolean closed = false;
+
   // Method handles bound at construction
   private final MethodHandle hFinalize;
   private final MethodHandle hCloseSession;
@@ -417,7 +424,21 @@ final class Pkcs11Ffm implements AutoCloseable {
 
   /** Returns a defensive copy of the cached 65-byte uncompressed EC point (04 || X || Y). */
   byte[] getPublicEcPoint() {
-    return cachedEcPoint.clone();
+    synchronized (lock) {
+      requireOpen();
+      return cachedEcPoint.clone();
+    }
+  }
+
+  /**
+   * Must be called holding {@link #lock}. Guards every FFM downcall against a use-after-close,
+   * which would otherwise jump to addresses inside the closed Arena's now-unmapped library region
+   * (SIGSEGV).
+   */
+  private void requireOpen() {
+    if (closed) {
+      throw new IllegalStateException("Pkcs11Ffm has been closed");
+    }
   }
 
   /**
@@ -431,6 +452,7 @@ final class Pkcs11Ffm implements AutoCloseable {
           "Expected 32-byte hash for CKM_ECDSA; got " + dataHash.length);
     }
     synchronized (lock) {
+      requireOpen();
       try (Arena scope = Arena.ofConfined()) {
         final MemorySegment mech = scope.allocate(CK_MECHANISM);
         mech.set(JAVA_LONG, 0, CKM_ECDSA);
@@ -445,6 +467,10 @@ final class Pkcs11Ffm implements AutoCloseable {
         outLen.set(JAVA_LONG, 0, 256L);
         check((long) hSign.invokeExact(session, in, (long) dataHash.length, out, outLen), "C_Sign");
         final long sigLen = outLen.get(JAVA_LONG, 0);
+        if (sigLen <= 0 || sigLen > 256) {
+          throw new SecurityModuleException(
+              "C_Sign returned implausible signature length: " + sigLen);
+        }
         final byte[] sig = new byte[(int) sigLen];
         MemorySegment.copy(out, JAVA_BYTE, 0, sig, 0, (int) sigLen);
         return sig;
@@ -463,6 +489,7 @@ final class Pkcs11Ffm implements AutoCloseable {
    */
   byte[] deriveEcdh(final byte[] peerPointDer) {
     synchronized (lock) {
+      requireOpen();
       try (Arena scope = Arena.ofConfined()) {
         final MemorySegment peerSeg = scope.allocateFrom(JAVA_BYTE, peerPointDer);
         final MemorySegment params = scope.allocate(CK_ECDH1_DERIVE_PARAMS);
@@ -483,8 +510,10 @@ final class Pkcs11Ffm implements AutoCloseable {
         final MemorySegment fseg = allocByte(scope, (byte) CK_FALSE);
         final MemorySegment tseg = allocByte(scope, (byte) CK_TRUE);
 
-        // Template: sensitive=true (cap 1=0 forbids non-sensitive derived secrets),
-        // extractable=true
+        // Template: sensitive=true + extractable=true. Both attributes are required together:
+        // sensitive=true satisfies HSMs that forbid non-sensitive derived secrets (Luna cap 1=0)
+        // and prevents direct readback via C_GetAttributeValue; extractable=true lets us run the
+        // wrap step below — C_WrapKey requires CKA_EXTRACTABLE=true on the source key.
         final MemorySegment tmpl = scope.allocate(CK_ATTRIBUTE, 6);
         setAttr(tmpl, 0, CKA_CLASS, scls, 8L);
         setAttr(tmpl, 1, CKA_KEY_TYPE, gtype, 8L);
@@ -499,45 +528,51 @@ final class Pkcs11Ffm implements AutoCloseable {
             "C_DeriveKey");
         final long hSecret = hSecOut.get(JAVA_LONG, 0);
 
-        // Wrap the derived secret with our long-lived KEK using AES-CBC (zero IV). The 32-byte
-        // secret is exactly 2 AES blocks so no padding is needed; CKM_AES_CBC is supported by
-        // both SoftHSM2 and Luna for wrap/decrypt. Output is exactly 32 bytes.
-        final MemorySegment iv = scope.allocate(JAVA_BYTE, 16); // zero-filled
-        final MemorySegment cbcMech = scope.allocate(CK_MECHANISM);
-        cbcMech.set(JAVA_LONG, 0, CKM_AES_CBC);
-        cbcMech.set(ADDRESS, 8, iv);
-        cbcMech.set(JAVA_LONG, 16, 16L);
-
-        final MemorySegment ct = scope.allocate(JAVA_BYTE, 64);
-        final MemorySegment ctLen = scope.allocate(JAVA_LONG);
-        ctLen.set(JAVA_LONG, 0, 64L);
-        check(
-            (long) hWrapKey.invokeExact(session, cbcMech, kekHandle, hSecret, ct, ctLen),
-            "C_WrapKey");
-        final long wlen = ctLen.get(JAVA_LONG, 0);
-
-        // Decrypt the wrapped ciphertext with the same KEK to recover the plaintext bytes
-        check((long) hDecryptInit.invokeExact(session, cbcMech, kekHandle), "C_DecryptInit");
-        final MemorySegment pt = scope.allocate(JAVA_BYTE, 64);
-        final MemorySegment ptLen = scope.allocate(JAVA_LONG);
-        ptLen.set(JAVA_LONG, 0, 64L);
-        check((long) hDecrypt.invokeExact(session, ct, wlen, pt, ptLen), "C_Decrypt");
-        final long plen = ptLen.get(JAVA_LONG, 0);
-
-        // Destroy the derived secret object — it's session-only but tidy to release the handle
         try {
-          @SuppressWarnings("unused")
-          final long ignored = (long) hDestroyObject.invokeExact(session, hSecret);
-        } catch (final Throwable ignore) {
-          // best-effort cleanup; the session close will release any leaked handles
-        }
+          // Wrap the derived secret with our long-lived KEK using AES-CBC. The 32-byte secret
+          // is exactly 2 AES blocks, so no padding is needed; CKM_AES_CBC is supported by both
+          // SoftHSM2 and Luna for wrap/decrypt. The IV is fixed all-zeros: this isn't a CBC
+          // confidentiality use — the ciphertext never leaves this method. The wrap is just
+          // half of an encrypt-decrypt-oracle pair that lets us round-trip the sensitive
+          // derived secret out of the HSM (since CKA_SENSITIVE=true blocks direct readback).
+          final MemorySegment iv = scope.allocate(JAVA_BYTE, 16); // zero-filled
+          final MemorySegment cbcMech = scope.allocate(CK_MECHANISM);
+          cbcMech.set(JAVA_LONG, 0, CKM_AES_CBC);
+          cbcMech.set(ADDRESS, 8, iv);
+          cbcMech.set(JAVA_LONG, 16, 16L);
 
-        if (plen != 32) {
-          throw new SecurityModuleException("ECDH shared secret expected 32 bytes; got " + plen);
+          final MemorySegment ct = scope.allocate(JAVA_BYTE, 64);
+          final MemorySegment ctLen = scope.allocate(JAVA_LONG);
+          ctLen.set(JAVA_LONG, 0, 64L);
+          check(
+              (long) hWrapKey.invokeExact(session, cbcMech, kekHandle, hSecret, ct, ctLen),
+              "C_WrapKey");
+          final long wlen = ctLen.get(JAVA_LONG, 0);
+
+          // Decrypt the wrapped ciphertext with the same KEK to recover the plaintext bytes
+          check((long) hDecryptInit.invokeExact(session, cbcMech, kekHandle), "C_DecryptInit");
+          final MemorySegment pt = scope.allocate(JAVA_BYTE, 64);
+          final MemorySegment ptLen = scope.allocate(JAVA_LONG);
+          ptLen.set(JAVA_LONG, 0, 64L);
+          check((long) hDecrypt.invokeExact(session, ct, wlen, pt, ptLen), "C_Decrypt");
+          final long plen = ptLen.get(JAVA_LONG, 0);
+
+          if (plen != 32) {
+            throw new SecurityModuleException("ECDH shared secret expected 32 bytes; got " + plen);
+          }
+          final byte[] shared = new byte[32];
+          MemorySegment.copy(pt, JAVA_BYTE, 0, shared, 0, 32);
+          return shared;
+        } finally {
+          // Always release the derived-secret handle so error paths don't leak object handles
+          // into the HSM session table over time.
+          try {
+            @SuppressWarnings("unused")
+            final long ignored = (long) hDestroyObject.invokeExact(session, hSecret);
+          } catch (final Throwable ignore) {
+            // best-effort cleanup; session close will release any leaked handles
+          }
         }
-        final byte[] shared = new byte[32];
-        MemorySegment.copy(pt, JAVA_BYTE, 0, shared, 0, 32);
-        return shared;
       } catch (final SecurityModuleException e) {
         throw e;
       } catch (final Throwable t) {
@@ -549,6 +584,10 @@ final class Pkcs11Ffm implements AutoCloseable {
   @Override
   public void close() {
     synchronized (lock) {
+      if (closed) {
+        return;
+      }
+      closed = true;
       // Destroy KEK first (best-effort)
       try {
         @SuppressWarnings("unused")
