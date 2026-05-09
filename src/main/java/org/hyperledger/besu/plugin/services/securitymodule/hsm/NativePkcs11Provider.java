@@ -74,7 +74,8 @@ import org.slf4j.LoggerFactory;
  *
  * <p>For background on why the FFM path is needed (Luna's strict spec compliance, the
  * derive-then-wrap-then-decrypt-via-HSM-oracle recipe, and the documented HSM cap 1=0 sensitivity
- * constraint), see {@code docs/thales-luna/README.md}.
+ * constraint), see {@code docs/thales-luna/README.md}. For the implementation-level design
+ * rationale and lifecycle/threading model, see {@code docs/native-pkcs11-design.md}.
  */
 class NativePkcs11Provider implements HsmProvider {
   private static final Logger LOG = LoggerFactory.getLogger(NativePkcs11Provider.class);

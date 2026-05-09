@@ -52,6 +52,9 @@ import org.slf4j.LoggerFactory;
  * PKCS#11 lib supports OS locking, but we serialize at the Java level for simplicity (one HSM
  * round-trip is on the order of 10-20 ms; per-provider serialization is acceptable).
  *
+ * <p>For the full design rationale (ECDH recipe, struct-offset trap, lifecycle, threading), see
+ * {@code docs/native-pkcs11-design.md}.
+ *
  * <p>References:
  *
  * <ul>

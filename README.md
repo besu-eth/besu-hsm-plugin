@@ -173,6 +173,7 @@ If you have any questions, queries or comments, [Besu channel on Discord] is the
 * [Contributing Guidelines]
 * [Coding Conventions](https://lf-hyperledger.atlassian.net/wiki/spaces/BESU/pages/22154259/Coding+Conventions)
 * [Pull Requests](https://lf-hyperledger.atlassian.net/wiki/spaces/BESU/pages/22154251/Pull+Requests)
+* [native-pkcs11 design notes](docs/native-pkcs11-design.md) — internals: FFM design, ECDH recipe, struct offsets, lifecycle
 
 ### Prerequisites
 
