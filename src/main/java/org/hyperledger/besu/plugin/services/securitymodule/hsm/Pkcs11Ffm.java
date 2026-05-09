@@ -378,6 +378,7 @@ final class Pkcs11Ffm implements AutoCloseable {
       final long pubKey =
           findObjectByLabel(
               arena, hFindObjInit, hFindObj, hFindObjFinal, session, CKO_PUBLIC_KEY, keyAlias);
+      LOG.info("Found PKCS#11 public key for alias '{}': handle={}", keyAlias, pubKey);
       final byte[] ecPoint = readEcPoint(arena, hGetAttr, session, pubKey);
 
       // Generate AES-256 KEK on HSM (sensitive by default; we never need its bytes)
