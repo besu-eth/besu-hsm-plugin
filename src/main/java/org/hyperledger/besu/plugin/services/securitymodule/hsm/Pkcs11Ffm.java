@@ -93,7 +93,8 @@ final class Pkcs11Ffm implements AutoCloseable {
   // CKF_RW_SESSION marks the session read-write — required by C_GenerateKey (used to mint the
   // session AES KEK below). SoftHSM2 and Luna are lax about this for session-only objects, but
   // strict v2.40 implementations enforce it (without CKF_RW_SESSION, C_GenerateKey returns
-  // CKR_SESSION_READ_ONLY = 0xB5).
+  // CKR_SESSION_READ_ONLY = 0xB5). AWS CloudHSM SDK 5 does not support read-only sessions at all
+  // — see https://docs.aws.amazon.com/cloudhsm/latest/userguide/ki-pkcs11-sdk.html#ki-pkcs11-13.
   private static final long CKF_SERIAL_SESSION = 0x00000004L;
   private static final long CKF_RW_SESSION = 0x00000002L;
   private static final long CK_TRUE = 1L;

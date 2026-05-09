@@ -252,8 +252,25 @@ A POC against AWS CloudHSM revealed that the recipe in §2 cannot be
 made to work on CloudHSM via standard PKCS#11. Documenting the
 findings here so a future maintainer doesn't repeat the dead end.
 
-CloudHSM rejects every standard path for getting the derived shared
-secret out of the HSM:
+**Root cause: AWS deliberately keeps the ECDH-derived secret
+HSM-internal in SDK 5 for FIPS compliance.** From the [AWS
+CloudHSM PKCS#11 known-issues page, ki-pkcs11-9](https://docs.aws.amazon.com/cloudhsm/latest/userguide/ki-pkcs11-sdk.html#ki-pkcs11-9):
+
+> *"Elliptic-curve Diffie-Hellman (ECDH) key derivation is executed
+> partially within the HSM. ... If your application requires your key
+> to remain within an FIPS boundary at all times, consider using an
+> alternative protocol that does not rely on ECDH key derivation.
+> Resolution status: SDK 5.16 now supports ECDH with Key Derivation
+> which is performed entirely within the HSM."*
+
+In the older SDK 3 the derived bytes were briefly client-side; AWS
+considered that a FIPS gap and closed it in SDK 5. Standard PKCS#11
+gives no path to retrieve a fully-HSM-internal secret as plaintext.
+The `cloudhsm-jce` provider works because it uses CloudHSM's
+proprietary protocol (outside the PKCS#11 surface) to extract the
+value.
+
+CloudHSM rejected every standard path we tried:
 
 - `CKM_AES_CBC` for `C_WrapKey` → `CKR_MECHANISM_INVALID (0x70)`.
   CBC isn't on CloudHSM's wrap whitelist.
@@ -273,14 +290,22 @@ secret out of the HSM:
   `CKR_MECHANISM_PARAM_INVALID (0x71)` again, with an undocumented
   params struct format.
 
-`cloudhsm-jce` works on CloudHSM because it uses CloudHSM's
-proprietary CKA-extension protocol to retrieve derived values —
-that's a CloudHSM-specific path that doesn't exist in standard
-PKCS#11. Reproducing it from a vendor-neutral FFM binding would
-require linking CloudHSM's private client SDK, which defeats the
-"one FFM path drives any PKCS#11 v2.40 HSM" design and turns this
-into a CloudHSM-specific provider — which is exactly what
-`cloudhsm-jce` already is.
+Even if `C_WrapKey(GCM)` had been accepted, AWS issue
+[ki-pkcs11-8](https://docs.aws.amazon.com/cloudhsm/latest/userguide/ki-pkcs11-sdk.html#ki-pkcs11-8)
+notes that *"FIPS requires that the initialization vector (IV) for
+`AES-GCM` be generated on the HSM"* — CloudHSM silently overwrites
+caller-supplied IVs, which would break the deterministic
+encrypt-decrypt-oracle assumption regardless. Likewise, AWS issue
+[ki-pkcs11-13](https://docs.aws.amazon.com/cloudhsm/latest/userguide/ki-pkcs11-sdk.html#ki-pkcs11-13)
+documents that SDK 5 does not support read-only `C_OpenSession`
+calls; `Pkcs11Ffm.open` already passes `CKF_SERIAL_SESSION |
+CKF_RW_SESSION` to satisfy that requirement on every HSM.
+
+Reproducing `cloudhsm-jce`'s extraction path from a vendor-neutral
+FFM binding would mean linking CloudHSM's private client SDK, which
+defeats the "one FFM path drives any PKCS#11 v2.40 HSM" design and
+turns this into a CloudHSM-specific provider — which is exactly
+what `cloudhsm-jce` already is.
 
 `native-pkcs11`'s sign path (`CKM_ECDSA`) does work on CloudHSM —
 the failure is specific to ECDH derive. But a validator that can't
