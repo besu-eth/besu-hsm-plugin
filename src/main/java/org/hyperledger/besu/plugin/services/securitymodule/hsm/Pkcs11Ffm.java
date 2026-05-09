@@ -89,7 +89,13 @@ final class Pkcs11Ffm implements AutoCloseable {
   private static final long CKM_AES_CBC = 0x00001082L;
   private static final long CKD_NULL = 0x00000001L;
   private static final long CKU_USER = 0x00000001L;
+  // Session flags for C_OpenSession. CKF_SERIAL_SESSION is mandatory per PKCS#11 v2.40.
+  // CKF_RW_SESSION marks the session read-write — required by C_GenerateKey (used to mint the
+  // session AES KEK below). SoftHSM2 and Luna are lax about this for session-only objects, but
+  // strict v2.40 implementations enforce it (without CKF_RW_SESSION, C_GenerateKey returns
+  // CKR_SESSION_READ_ONLY = 0xB5).
   private static final long CKF_SERIAL_SESSION = 0x00000004L;
+  private static final long CKF_RW_SESSION = 0x00000002L;
   private static final long CK_TRUE = 1L;
   private static final long CK_FALSE = 0L;
   private static final long CKA_CLASS = 0x00000000L;
@@ -337,7 +343,7 @@ final class Pkcs11Ffm implements AutoCloseable {
           (long)
               hOpenSession.invokeExact(
                   resolvedSlot,
-                  CKF_SERIAL_SESSION,
+                  CKF_SERIAL_SESSION | CKF_RW_SESSION,
                   MemorySegment.NULL,
                   MemorySegment.NULL,
                   sessOut),
