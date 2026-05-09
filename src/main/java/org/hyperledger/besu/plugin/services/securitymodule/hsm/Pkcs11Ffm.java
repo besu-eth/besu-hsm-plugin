@@ -24,7 +24,10 @@ import java.lang.foreign.Linker;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.SymbolLookup;
+import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.Arrays;
@@ -228,6 +231,7 @@ final class Pkcs11Ffm implements AutoCloseable {
       final Integer slotListIndex,
       final char[] pin,
       final String keyAlias) {
+    requireSupportedPlatform();
     if ((slotId == null) == (slotListIndex == null)) {
       throw new SecurityModuleException(
           "Exactly one of slotId or slotListIndex must be supplied (slotId="
@@ -244,6 +248,13 @@ final class Pkcs11Ffm implements AutoCloseable {
         keyAlias);
     final Arena arena = Arena.ofShared();
     boolean weInitialized = false;
+    boolean sessionOpened = false;
+    long openedSession = 0L;
+    // Hoisted out of the try so the catch blocks can call them for best-effort cleanup if init
+    // fails partway through. They are reassigned to the bound handles inside the try.
+    MethodHandle hLogoutForCleanup = null;
+    MethodHandle hCloseSessionForCleanup = null;
+    MethodHandle hFinalizeForCleanup = null;
     try {
       // Load the library and resolve C_GetFunctionList
       final SymbolLookup lib = SymbolLookup.libraryLookup(libPath, arena);
@@ -264,12 +275,15 @@ final class Pkcs11Ffm implements AutoCloseable {
       // Bind every method handle we need
       final MethodHandle hInitialize = bind(fl, OFF_C_INITIALIZE, ADDRESS);
       final MethodHandle hFinalize = bind(fl, OFF_C_FINALIZE, ADDRESS);
+      hFinalizeForCleanup = hFinalize;
       final MethodHandle hGetSlotList = bind(fl, OFF_C_GET_SLOT_LIST, JAVA_BYTE, ADDRESS, ADDRESS);
       final MethodHandle hOpenSession =
           bind(fl, OFF_C_OPEN_SESSION, JAVA_LONG, JAVA_LONG, ADDRESS, ADDRESS, ADDRESS);
       final MethodHandle hCloseSession = bind(fl, OFF_C_CLOSE_SESSION, JAVA_LONG);
+      hCloseSessionForCleanup = hCloseSession;
       final MethodHandle hLogin = bind(fl, OFF_C_LOGIN, JAVA_LONG, JAVA_LONG, ADDRESS, JAVA_LONG);
       final MethodHandle hLogout = bind(fl, OFF_C_LOGOUT, JAVA_LONG);
+      hLogoutForCleanup = hLogout;
       final MethodHandle hDestroyObject = bind(fl, OFF_C_DESTROY_OBJECT, JAVA_LONG, JAVA_LONG);
       final MethodHandle hGetAttr =
           bind(fl, OFF_C_GET_ATTRIBUTE_VALUE, JAVA_LONG, JAVA_LONG, ADDRESS, JAVA_LONG);
@@ -319,8 +333,17 @@ final class Pkcs11Ffm implements AutoCloseable {
                   sessOut),
           "C_OpenSession");
       final long session = sessOut.get(JAVA_LONG, 0);
+      sessionOpened = true;
+      openedSession = session;
 
-      final byte[] pinBytes = new String(pin).getBytes(StandardCharsets.UTF_8);
+      // Encode the char[] PIN to UTF-8 bytes without going through an immutable String, which
+      // would otherwise pin the PIN in the heap until GC.
+      final ByteBuffer pinEncoded = StandardCharsets.UTF_8.encode(CharBuffer.wrap(pin));
+      final byte[] pinBytes = new byte[pinEncoded.remaining()];
+      pinEncoded.get(pinBytes);
+      if (pinEncoded.hasArray()) {
+        Arrays.fill(pinEncoded.array(), (byte) 0);
+      }
       final MemorySegment pinSeg = arena.allocateFrom(JAVA_BYTE, pinBytes);
       final long loginRv =
           (long) hLogin.invokeExact(session, CKU_USER, pinSeg, (long) pinBytes.length);
@@ -362,11 +385,32 @@ final class Pkcs11Ffm implements AutoCloseable {
           hDecryptInit,
           hDecrypt,
           hDestroyObject);
-    } catch (final SecurityModuleException e) {
-      arena.close();
-      throw e;
     } catch (final Throwable t) {
+      // Best-effort cleanup so a partial init does not leave the HSM session or the cryptoki
+      // library state hanging around for the rest of the JVM's life.
+      if (sessionOpened && hLogoutForCleanup != null && hCloseSessionForCleanup != null) {
+        try {
+          hLogoutForCleanup.invokeExact(openedSession);
+        } catch (final Throwable ignored) {
+          // best effort
+        }
+        try {
+          hCloseSessionForCleanup.invokeExact(openedSession);
+        } catch (final Throwable ignored) {
+          // best effort
+        }
+      }
+      if (weInitialized && hFinalizeForCleanup != null) {
+        try {
+          hFinalizeForCleanup.invokeExact(MemorySegment.NULL);
+        } catch (final Throwable ignored) {
+          // best effort
+        }
+      }
       arena.close();
+      if (t instanceof SecurityModuleException sme) {
+        throw sme;
+      }
       throw new SecurityModuleException("Failed to initialize Pkcs11Ffm", t);
     }
   }
@@ -557,6 +601,27 @@ final class Pkcs11Ffm implements AutoCloseable {
     }
   }
 
+  /**
+   * The {@code CK_FUNCTION_LIST} field offsets used in this binding assume an 8-byte function
+   * pointer and SysV struct layout (64-bit Linux/macOS). Other ABIs (Windows, 32-bit) would require
+   * different offsets; fail fast rather than jump to garbage addresses at runtime.
+   */
+  private static void requireSupportedPlatform() {
+    if (ValueLayout.ADDRESS.byteSize() != 8) {
+      throw new SecurityModuleException(
+          "native-pkcs11 requires a 64-bit JVM; pointer size is "
+              + ValueLayout.ADDRESS.byteSize()
+              + " bytes");
+    }
+    final String os = System.getProperty("os.name", "").toLowerCase();
+    if (!(os.contains("linux") || os.contains("mac") || os.contains("darwin"))) {
+      throw new SecurityModuleException(
+          "native-pkcs11 currently supports 64-bit Linux and macOS only; got os.name='"
+              + System.getProperty("os.name")
+              + "'. Windows uses a different ABI and is not yet validated.");
+    }
+  }
+
   private static void setAttr(
       final MemorySegment tmpl,
       final int idx,
@@ -699,16 +764,21 @@ final class Pkcs11Ffm implements AutoCloseable {
     final MemorySegment vl32 = allocLong(arena, 32L);
     final MemorySegment fseg = allocByte(arena, (byte) CK_FALSE);
     final MemorySegment tseg = allocByte(arena, (byte) CK_TRUE);
-    final MemorySegment tmpl = arena.allocate(CK_ATTRIBUTE, 6);
+    // Set CKA_SENSITIVE=true and CKA_EXTRACTABLE=false explicitly rather than relying on
+    // vendor defaults — Luna defaults are conservative but SoftHSM2 et al. may produce an
+    // extractable, non-sensitive KEK otherwise.
+    final MemorySegment tmpl = arena.allocate(CK_ATTRIBUTE, 8);
     setAttr(tmpl, 0, CKA_CLASS, scls, 8L);
     setAttr(tmpl, 1, CKA_KEY_TYPE, akt, 8L);
     setAttr(tmpl, 2, CKA_VALUE_LEN, vl32, 8L);
     setAttr(tmpl, 3, CKA_TOKEN, fseg, 1L);
     setAttr(tmpl, 4, CKA_WRAP, tseg, 1L);
     setAttr(tmpl, 5, CKA_DECRYPT, tseg, 1L);
+    setAttr(tmpl, 6, CKA_SENSITIVE, tseg, 1L);
+    setAttr(tmpl, 7, CKA_EXTRACTABLE, fseg, 1L);
 
     final MemorySegment hOut = arena.allocate(JAVA_LONG);
-    check((long) hGenerateKey.invokeExact(session, mech, tmpl, 6L, hOut), "C_GenerateKey(AES)");
+    check((long) hGenerateKey.invokeExact(session, mech, tmpl, 8L, hOut), "C_GenerateKey(AES)");
     return hOut.get(JAVA_LONG, 0);
   }
 }

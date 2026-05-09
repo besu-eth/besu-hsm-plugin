@@ -20,6 +20,8 @@ import static org.hyperledger.besu.plugin.services.securitymodule.hsm.Validation
 import com.google.common.annotations.VisibleForTesting;
 import java.io.IOException;
 import java.math.BigInteger;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -330,9 +332,29 @@ class NativePkcs11Provider implements HsmProvider {
     } catch (final IOException e) {
       throw new SecurityModuleException("Failed to read PIN from " + passwordPath, e);
     }
-    final char[] pin = new String(bytes, StandardCharsets.UTF_8).trim().toCharArray();
+    // Decode bytes -> CharBuffer directly to avoid going through an immutable String, which would
+    // pin the PIN in the heap until GC and defeat the byte[]/char[] zeroization below.
+    final CharBuffer cb = StandardCharsets.UTF_8.decode(ByteBuffer.wrap(bytes));
     Arrays.fill(bytes, (byte) 0);
-    return pin;
+    try {
+      int end = cb.length();
+      while (end > 0 && Character.isWhitespace(cb.charAt(end - 1))) {
+        end--;
+      }
+      int start = 0;
+      while (start < end && Character.isWhitespace(cb.charAt(start))) {
+        start++;
+      }
+      final char[] pin = new char[end - start];
+      for (int i = 0; i < pin.length; i++) {
+        pin[i] = cb.charAt(start + i);
+      }
+      return pin;
+    } finally {
+      if (cb.hasArray()) {
+        Arrays.fill(cb.array(), '\0');
+      }
+    }
   }
 
   @VisibleForTesting
@@ -340,13 +362,14 @@ class NativePkcs11Provider implements HsmProvider {
     final int coordSize = (curveParams.getCurveOrder().bitLength() + 7) / 8;
     final int expected = 1 + 2 * coordSize;
     if (ecPointBytes.length != expected || ecPointBytes[0] != 0x04) {
+      final String prefix =
+          ecPointBytes.length > 0 ? String.format(" prefix=0x%02x", ecPointBytes[0]) : "";
       throw new SecurityModuleException(
           "Invalid HSM EC public point: expected "
               + expected
               + " bytes starting with 0x04, got length="
               + ecPointBytes.length
-              + " prefix=0x"
-              + String.format("%02x", ecPointBytes[0]));
+              + prefix);
     }
     final BigInteger x = new BigInteger(1, ecPointBytes, 1, coordSize);
     final BigInteger y = new BigInteger(1, ecPointBytes, 1 + coordSize, coordSize);

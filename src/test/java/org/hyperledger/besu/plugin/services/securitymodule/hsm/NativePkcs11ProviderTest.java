@@ -241,6 +241,18 @@ class NativePkcs11ProviderTest {
         .hasMessageContaining("Invalid HSM EC public point");
   }
 
+  @Test
+  void parseEcPointRejectsEmptyArrayWithoutAioobe() {
+    final byte[] empty = new byte[0];
+
+    // The error formatter must not index into an empty array; it should produce a clean
+    // SecurityModuleException, not an ArrayIndexOutOfBoundsException.
+    assertThatThrownBy(() -> NativePkcs11Provider.parseEcPoint(empty, SECP256K1))
+        .isInstanceOf(SecurityModuleException.class)
+        .hasMessageContaining("got length=0")
+        .hasMessageNotContaining("prefix=0x");
+  }
+
   // ============== Helper ==============
 
   private static Path write(final Path dir, final String... lines) throws IOException {
