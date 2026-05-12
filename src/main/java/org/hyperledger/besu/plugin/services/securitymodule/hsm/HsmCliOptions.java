@@ -30,7 +30,7 @@ public class HsmCliOptions {
 
   @Option(
       names = "--plugin-" + SECURITY_MODULE_NAME + "-config-path",
-      description = "Path to the PKCS11 configuration file (required for generic-pkcs11)",
+      description = "Path to the PKCS11 configuration file (required for pkcs11 providers)",
       paramLabel = "<path>")
   private Path pkcs11ConfigPath;
 
@@ -38,7 +38,7 @@ public class HsmCliOptions {
       names = "--plugin-" + SECURITY_MODULE_NAME + "-password-path",
       description =
           "Path to the file that contains password or PIN to access PKCS11 token"
-              + " (required for generic-pkcs11)",
+              + " (required for pkcs11 providers)",
       paramLabel = "<path>")
   private Path pkcs11PasswordPath;
 
