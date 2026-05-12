@@ -544,6 +544,11 @@ final class Pkcs11Ffm implements AutoCloseable {
             "C_DeriveKey");
         final long hSecret = hSecOut.get(JAVA_LONG, 0);
 
+        // Allocate the ciphertext/plaintext buffers before the try so the finally below can
+        // zero them on every exit path (including exceptions thrown mid-decrypt).
+        final MemorySegment ct = scope.allocate(JAVA_BYTE, 64);
+        final MemorySegment pt = scope.allocate(JAVA_BYTE, 64);
+
         try {
           // Wrap the derived secret with our long-lived KEK using AES-CBC. The 32-byte secret
           // is exactly 2 AES blocks, so no padding is needed; CKM_AES_CBC is supported by both
@@ -557,7 +562,6 @@ final class Pkcs11Ffm implements AutoCloseable {
           cbcMech.set(ADDRESS, 8, iv);
           cbcMech.set(JAVA_LONG, 16, 16L);
 
-          final MemorySegment ct = scope.allocate(JAVA_BYTE, 64);
           final MemorySegment ctLen = scope.allocate(JAVA_LONG);
           ctLen.set(JAVA_LONG, 0, 64L);
           check(
@@ -567,7 +571,6 @@ final class Pkcs11Ffm implements AutoCloseable {
 
           // Decrypt the wrapped ciphertext with the same KEK to recover the plaintext bytes
           check((long) hDecryptInit.invokeExact(session, cbcMech, kekHandle), "C_DecryptInit");
-          final MemorySegment pt = scope.allocate(JAVA_BYTE, 64);
           final MemorySegment ptLen = scope.allocate(JAVA_LONG);
           ptLen.set(JAVA_LONG, 0, 64L);
           check((long) hDecrypt.invokeExact(session, ct, wlen, pt, ptLen), "C_Decrypt");
@@ -580,6 +583,11 @@ final class Pkcs11Ffm implements AutoCloseable {
           MemorySegment.copy(pt, JAVA_BYTE, 0, shared, 0, 32);
           return shared;
         } finally {
+          // Zero the native buffers that briefly held the plaintext shared secret (pt) and its
+          // AES-CBC wrapping (ct). Arena.close() unmaps the memory but is not specified to zero
+          // it first, so we wipe explicitly before the segments leave scope.
+          pt.fill((byte) 0);
+          ct.fill((byte) 0);
           // Always release the derived-secret handle so error paths don't leak object handles
           // into the HSM session table over time.
           try {
