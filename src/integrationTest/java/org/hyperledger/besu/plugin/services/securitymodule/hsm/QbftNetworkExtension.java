@@ -70,6 +70,7 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
       "unzip -o -j /tmp/besu-hsm-plugin.zip -d /opt/besu/plugins/";
   static final int RPC_PORT = 8545;
   private static final int P2P_PORT = 30303;
+  private static final Duration NODE_STARTUP_TIMEOUT = Duration.ofMinutes(5);
 
   private static final HttpClient HTTP_CLIENT = HttpClient.newHttpClient();
   private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -291,7 +292,7 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
             .withLogConsumer(logConsumer)
             .waitingFor(
                 Wait.forLogMessage(".*Ethereum main loop is up.*", 1)
-                    .withStartupTimeout(Duration.ofSeconds(45)));
+                    .withStartupTimeout(NODE_STARTUP_TIMEOUT));
 
     try {
       container.start();
@@ -359,7 +360,7 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
             .withLogConsumer(logConsumer)
             .waitingFor(
                 Wait.forLogMessage(".*Ethereum main loop is up.*", 1)
-                    .withStartupTimeout(Duration.ofMinutes(5)));
+                    .withStartupTimeout(NODE_STARTUP_TIMEOUT));
 
     container.start();
     besuContainers.add(container);
