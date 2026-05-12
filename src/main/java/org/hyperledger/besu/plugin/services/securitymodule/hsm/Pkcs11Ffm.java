@@ -362,9 +362,13 @@ final class Pkcs11Ffm implements AutoCloseable {
         Arrays.fill(pinEncoded.array(), (byte) 0);
       }
       final MemorySegment pinSeg = arena.allocateFrom(JAVA_BYTE, pinBytes);
-      final long loginRv =
-          (long) hLogin.invokeExact(session, CKU_USER, pinSeg, (long) pinBytes.length);
-      Arrays.fill(pinBytes, (byte) 0);
+      final long loginRv;
+      try {
+        loginRv = (long) hLogin.invokeExact(session, CKU_USER, pinSeg, (long) pinBytes.length);
+      } finally {
+        pinSeg.fill((byte) 0);
+        Arrays.fill(pinBytes, (byte) 0);
+      }
       if (loginRv != CKR_OK && loginRv != CKR_USER_ALREADY_LOGGED_IN) {
         check(loginRv, "C_Login");
       }
@@ -454,8 +458,9 @@ final class Pkcs11Ffm implements AutoCloseable {
 
   /**
    * Sign a pre-computed 32-byte hash with the configured private key using {@code CKM_ECDSA}.
-   * Returns r || s as a single 64-byte buffer (P1363 format). Caller is responsible for encoding
-   * (DER or P1363) as needed.
+   * Returns {@code r || s} concatenated (P1363 format). For 256-bit curves (secp256k1/secp256r1)
+   * this is 64 bytes; the buffer is sized generously to also accommodate 384/521-bit curves. Caller
+   * is responsible for re-encoding (e.g. to DER) as needed.
    */
   byte[] sign(final byte[] dataHash) {
     if (dataHash.length != 32) {
