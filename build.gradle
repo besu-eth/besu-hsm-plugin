@@ -63,9 +63,13 @@ dependencies {
 }
 
 // Apply a specific Java toolchain to ease working on different environments.
+// Java 25 is required for the Foreign Function & Memory API (java.lang.foreign.*),
+// used by the native-pkcs11 provider to drive Luna's PKCS#11 lib without going
+// through SunPKCS11 (which can't be configured for Luna's required DER-wrapped
+// peer pubkey format on firmware 7.0.3).
 java {
   toolchain {
-    languageVersion = JavaLanguageVersion.of(21)
+    languageVersion = JavaLanguageVersion.of(25)
   }
 }
 
@@ -81,6 +85,9 @@ tasks.named('jar') {
 tasks.named('test') {
   // Use JUnit Platform for unit tests.
   useJUnitPlatform()
+  // FFM downcall handles in Pkcs11Ffm need native-access permission;
+  // suppress the JDK warning in tests too.
+  jvmArgs '--enable-native-access=ALL-UNNAMED'
 }
 
 // Integration test source set and task
@@ -115,6 +122,7 @@ tasks.register('integrationTest', Test) {
   distZip.outputs.upToDateWhen { false }
   useJUnitPlatform()
   systemProperty 'besu.version', libs.versions.besu.asProvider().get()
+  jvmArgs '--enable-native-access=ALL-UNNAMED'
   outputs.upToDateWhen { false } // Always re-run; Docker container state is not tracked by Gradle
 }
 

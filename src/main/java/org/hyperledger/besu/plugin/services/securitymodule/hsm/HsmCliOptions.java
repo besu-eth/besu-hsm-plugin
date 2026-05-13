@@ -26,11 +26,11 @@ public class HsmCliOptions {
       names = "--plugin-" + SECURITY_MODULE_NAME + "-provider-type",
       description = "HSM provider type: ${COMPLETION-CANDIDATES} (default: ${DEFAULT-VALUE})",
       paramLabel = "<type>")
-  private HsmProviderType providerType = HsmProviderType.GENERIC_PKCS11;
+  private HsmProviderType providerType = HsmProviderType.NATIVE_PKCS11;
 
   @Option(
       names = "--plugin-" + SECURITY_MODULE_NAME + "-config-path",
-      description = "Path to the PKCS11 configuration file (required for generic-pkcs11)",
+      description = "Path to the PKCS11 configuration file (required for pkcs11 providers)",
       paramLabel = "<path>")
   private Path pkcs11ConfigPath;
 
@@ -38,7 +38,7 @@ public class HsmCliOptions {
       names = "--plugin-" + SECURITY_MODULE_NAME + "-password-path",
       description =
           "Path to the file that contains password or PIN to access PKCS11 token"
-              + " (required for generic-pkcs11)",
+              + " (required for pkcs11 providers)",
       paramLabel = "<path>")
   private Path pkcs11PasswordPath;
 
@@ -70,6 +70,7 @@ public class HsmCliOptions {
   private EcCurve ecCurve = EcCurve.SECP256K1;
 
   enum HsmProviderType {
+    NATIVE_PKCS11("native-pkcs11"),
     GENERIC_PKCS11("generic-pkcs11"),
     CLOUDHSM_JCE("cloudhsm-jce");
 

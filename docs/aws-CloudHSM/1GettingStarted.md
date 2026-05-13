@@ -5,6 +5,14 @@ environment, and generating secp256k1 validator keys on the HSM. By the end, you
 have five validator key pairs on the HSM and their raw public keys exported for use in
 QBFT genesis configuration.
 
+> **Use `cloudhsm-jce` for CloudHSM, not `native-pkcs11`.** CloudHSM's PKCS#11
+> implementation does not permit extracting an ECDH-derived shared secret through any
+> standard wrap or attribute-read path. `cloudhsm-jce` works because it uses CloudHSM's
+> proprietary value-retrieval protocol. The `native-pkcs11` provider works on Thales
+> Luna and any HSM that supports the standard `CKM_AES_CBC` wrap-decrypt-oracle pattern,
+> but not on CloudHSM. See the main README's *Known Limitations* section for the full
+> rationale.
+
 ## Prerequisites
 
 - **An initialized and activated CloudHSM cluster.** Read the

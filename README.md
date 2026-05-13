@@ -3,108 +3,49 @@
  [![Besu](https://img.shields.io/badge/Besu-26.4.0-blue)](https://github.com/besu-eth/besu/releases/tag/26.4.0)
  [![Discord](https://img.shields.io/discord/905194001349627914?logo=Hyperledger&style=plastic)](https://discord.com/invite/hyperledger)
 
-A Hardware Security Module (HSM) plugin for [Hyperledger Besu](https://github.com/besu-eth/besu). This plugin enables Besu 
-validators to delegate cryptographic signing operations to an HSM, keeping private 
-keys secure in dedicated hardware rather than in software.
+A Hardware Security Module (HSM) plugin for [Besu](https://github.com/besu-eth/besu).
+This plugin enables Besu validators to delegate cryptographic signing operations to an HSM, keeping
+private keys secure in dedicated hardware rather than in software.
 
-Two provider modes are supported:
+Three provider modes are supported. The default is `native-pkcs11`, which works with any
+[PKCS#11](https://en.wikipedia.org/wiki/PKCS_11) HSM and is recommended for production.
+`cloudhsm-jce` is the production path for AWS CloudHSM, and `generic-pkcs11` is a dev/test
+option targeting SoftHSM2.
 
-- **Generic PKCS#11** — Uses Java's SunPKCS11 provider to work with any [PKCS#11](https://en.wikipedia.org/wiki/PKCS_11) compatible HSM
-  (SoftHSM2, YubiHSM2, Thales Luna, etc.)
-- **AWS CloudHSM JCE** — Uses the [AWS CloudHSM JCE provider](https://docs.aws.amazon.com/cloudhsm/latest/userguide/java-library-install.html)
-  for direct integration with AWS CloudHSM
+## Providers
+
+Pick the provider that matches your HSM. The CLI flag values listed below are what you pass to
+`--plugin-hsm-provider-type`.
+
+- **`native-pkcs11`** *(default, recommended for production)* — Works with any PKCS#11 v2.40 HSM,
+  including strict-spec HSMs such as **Thales Luna**. No certificate is required alongside the
+  private key on the token. Not currently compatible with **AWS CloudHSM** — see Known
+  Limitations.
+- **`cloudhsm-jce`** *(production, AWS CloudHSM only)* — Uses the [AWS CloudHSM JCE provider](https://docs.aws.amazon.com/cloudhsm/latest/userguide/java-library-install.html)
+  directly, with no PKCS#11 configuration file. Authenticates via the `HSM_USER` and `HSM_PASSWORD`
+  environment variables.
+- **`generic-pkcs11`** *(dev/test only)* — Targets **SoftHSM2** for local development and
+  integration tests. ECDH compatibility with production HSMs is **not** guaranteed; most strict
+  v2.40 HSMs reject the required peer-point format. Requires `CKA_SENSITIVE=false` on derived
+  secrets and a self-signed certificate associated with the private key on the token.
+  **Production users should choose `native-pkcs11` or `cloudhsm-jce`.**
 
 ## Architecture
 
 ![Besu HSM Plugin Architecture](docs/besu-hsm-plugin-architecture.png)
 
-The plugin sits between the Besu client (validator) and HSM providers. It supports:
+The plugin sits between Besu's validator process and the HSM, registering with Besu's
+`SecurityModuleService`. Provider selection, key aliases, and authentication are configured via
+plugin CLI options.
 
-- **Generic PKCS#11** — Connect to any PKCS#11-compatible HSM via Java's SunPKCS11 provider
-  (cloud or local: AWS CloudHSM, Azure Dedicated HSM, Google Cloud HSM, SoftHSM2, YubiHSM2, etc.)
-- **AWS CloudHSM JCE** — Connect directly to AWS CloudHSM via the CloudHSM JCE provider (no
-  PKCS#11 configuration needed)
-- **Configuration** — Provider selection, key aliases, and authentication are specified through
-  plugin CLI options
+## Deployment Guides
 
-## HSM Key Setup
+Full walkthroughs for setting up a QBFT validator network on each supported HSM, including key
+generation steps, are in:
 
-The plugin needs access to a private key and its corresponding public key on the PKCS#11 token. Java's SunPKCS11
-`KeyStore` API requires a certificate to be associated with a private key — without one, the `KeyStore` will not
-surface the private key entry at all. The certificate serves no cryptographic purpose; a self-signed certificate
-is sufficient.
-
-There are two approaches depending on where the key pair is generated:
-
-### Option A: Generate Key Externally with OpenSSL
-
-Generate the key pair and certificate with OpenSSL, then import everything into the HSM.
-
-```shell
-# Generate EC key pair and self-signed certificate
-openssl ecparam -name secp256k1 -genkey -noout -out ec-key.pem
-openssl req -new -x509 -key ec-key.pem -out ec-cert.pem -days 365 -subj "/CN=besu-hsm" -sha256
-
-# Convert to DER format
-openssl ec -in ec-key.pem -outform DER -out ec-key.der
-openssl ec -in ec-key.pem -pubout -outform DER -out ec-pub.der
-openssl x509 -in ec-cert.pem -outform DER -out ec-cert.der
-
-# Import private key, public key, and certificate into HSM
-pkcs11-tool --module <pkcs11-lib> --login --pin <pin> \
-    --write-object ec-key.der --type privkey --label mykey --id 01 --usage-derive
-pkcs11-tool --module <pkcs11-lib> --login --pin <pin> \
-    --write-object ec-pub.der --type pubkey --label mykey --id 01 --usage-derive
-pkcs11-tool --module <pkcs11-lib> --login --pin <pin> \
-    --write-object ec-cert.der --type cert --label mykey --id 01
-```
-
-### Option B: Generate Key on the HSM with `pkcs11-tool`
-
-Generate the key pair directly on the HSM, then create a self-signed certificate using OpenSSL's PKCS#11 engine 
-(requires `libengine-pkcs11-openssl` / `libp11`). This keeps the private key on the HSM at all times.
-
-```shell
-# 1. Generate key pair on the HSM
-pkcs11-tool --module <pkcs11-lib> --login --pin <pin> \
-    --keypairgen --key-type EC:secp256k1 \
-    --label mykey --id 01 --usage-sign --usage-derive
-
-# 2. Create OpenSSL engine config (adjust paths for your platform)
-cat > openssl-p11.cfg <<EOF
-openssl_conf = openssl_def
-[openssl_def]
-engines = engine_section
-[engine_section]
-pkcs11 = pkcs11_section
-[pkcs11_section]
-engine_id = pkcs11
-dynamic_path = /usr/lib/x86_64-linux-gnu/engines-3/pkcs11.so
-MODULE_PATH = <pkcs11-lib>
-EOF
-
-# 3. Generate self-signed certificate (signed by the HSM private key)
-#    The key is referenced via a PKCS#11 URI (RFC 7512) using stable
-#    token/object labels rather than volatile slot numbers.
-OPENSSL_CONF=openssl-p11.cfg openssl req -x509 -new \
-    -engine pkcs11 -keyform engine \
-    -key "pkcs11:token=<token-label>;object=mykey;type=private" \
-    -passin "pass:<pin>" \
-    -sha256 -subj "/CN=besu-hsm" -days 365 \
-    -out cert.pem
-
-# 4. Import certificate back to the HSM
-openssl x509 -in cert.pem -outform DER -out cert.der
-pkcs11-tool --module <pkcs11-lib> --login --pin <pin> \
-    --write-object cert.der --type cert --label mykey --id 01
-```
-
-### Note on the Certificate Requirement
-
-This is a limitation of Java's SunPKCS11 `KeyStore` implementation, not PKCS#11 itself. The PKCS#11 standard
-does not require certificates for key access, but Java's `KeyStore` abstraction models private keys as
-`PrivateKeyEntry` objects which always include a certificate chain. Without a certificate, `KeyStore.getKey()`
-will not return the private key at all.
+- **Thales Luna** (PCIe / network HSM, `native-pkcs11`) — [`docs/thales-luna/README.md`](docs/thales-luna/README.md)
+- **AWS CloudHSM** (`cloudhsm-jce`) — [`docs/aws-CloudHSM/`](docs/aws-CloudHSM/)
+- **SoftHSM2** (local dev/test, `generic-pkcs11`) — [`docker/softhsm2/`](docker/softhsm2/)
 
 ## Plugin CLI Options
 
@@ -112,18 +53,59 @@ The plugin registers the following CLI options with Besu:
 
 | Option | Description | Required |
 |--------|-------------|----------|
-| `--plugin-hsm-provider-type` | Provider type: `generic-pkcs11` (default) or `cloudhsm-jce` | No |
-| `--plugin-hsm-config-path` | Path to the PKCS#11 configuration file | `generic-pkcs11` only |
-| `--plugin-hsm-password-path` | Path to the file containing the token PIN/password | `generic-pkcs11` only |
+| `--plugin-hsm-provider-type` | Provider type: `native-pkcs11` (default), `cloudhsm-jce`, or `generic-pkcs11` | No |
+| `--plugin-hsm-config-path` | Path to the PKCS#11 configuration file | `native-pkcs11` and `generic-pkcs11` |
+| `--plugin-hsm-password-path` | Path to the file containing the token PIN/password | `native-pkcs11` and `generic-pkcs11` |
 | `--plugin-hsm-key-alias` | Alias/label of the private key on the HSM | Yes |
 | `--plugin-hsm-public-key-alias` | Alias/label of the public key on the HSM | `cloudhsm-jce` only |
 | `--plugin-hsm-cloudhsm-jar-path` | Path to CloudHSM JCE jar file or directory (default: `/opt/cloudhsm/java`) | No |
 | `--plugin-hsm-ec-curve` | EC curve: `secp256k1` (default) or `secp256r1` | No |
 
-### Generic PKCS#11 Example
+### `native-pkcs11` example
 
 ```shell
 besu --security-module=hsm \
+  --plugin-hsm-config-path=/etc/besu/pkcs11.cfg \
+  --plugin-hsm-password-path=/etc/besu/hsm-pin.txt \
+  --plugin-hsm-key-alias=mykey
+```
+
+The PKCS#11 config file points the plugin at the vendor library and slot, e.g.:
+
+```
+library = /usr/safenet/lunaclient/lib/libCryptoki2_64.so
+slot = 0
+```
+
+See the [Thales Luna deployment guide](docs/thales-luna/README.md) for the full config-file format
+and a complete validator-setup walkthrough.
+
+### `cloudhsm-jce` example
+
+The CloudHSM JCE jar is auto-discovered from `/opt/cloudhsm/java/` by default; override with
+`--plugin-hsm-cloudhsm-jar-path` if needed.
+
+```shell
+export HSM_USER=besu_crypto_user
+export HSM_PASSWORD=<password>
+
+besu --security-module=hsm \
+  --plugin-hsm-provider-type=cloudhsm-jce \
+  --plugin-hsm-key-alias=my-private-key \
+  --plugin-hsm-public-key-alias=my-public-key
+```
+
+> **Note:** The CloudHSM JCE provider requires separate aliases for the private and public keys
+> because CloudHSM does not associate certificates with key entries the way Java's SunPKCS11
+> `KeyStore` does.
+
+See the [AWS CloudHSM guides](docs/aws-CloudHSM/) for cluster setup and a full QBFT walkthrough.
+
+### `generic-pkcs11` example *(dev/test)*
+
+```shell
+besu --security-module=hsm \
+  --plugin-hsm-provider-type=generic-pkcs11 \
   --plugin-hsm-config-path=/etc/besu/pkcs11.cfg \
   --plugin-hsm-password-path=/etc/besu/hsm-pin.txt \
   --plugin-hsm-key-alias=mykey
@@ -145,40 +127,13 @@ besu --security-module=hsm \
 > ```
 >
 > See [`docker/softhsm2/config/pkcs11-softhsm.cfg`](docker/softhsm2/config/pkcs11-softhsm.cfg)
-> for a complete example. Some HSMs (e.g., AWS CloudHSM) do not allow these attributes — use the
-> `cloudhsm-jce` provider type instead.
-
-### AWS CloudHSM JCE Example
-
-The `cloudhsm-jce` provider uses the [AWS CloudHSM JCE provider](https://docs.aws.amazon.com/cloudhsm/latest/userguide/java-library-install.html)
-directly rather than going through a PKCS#11 library. The CloudHSM JCE jar is auto-discovered from
-`/opt/cloudhsm/java/` by default. Use `--plugin-hsm-cloudhsm-jar-path` to override with a custom
-directory or a direct path to the jar file.
-
-Authentication is handled via the `HSM_USER` and `HSM_PASSWORD` environment variables (or
-equivalent system properties) as documented by AWS.
-
-```shell
-export HSM_USER=besu_crypto_user
-export HSM_PASSWORD=<password>
-
-besu --security-module=hsm \
-  --plugin-hsm-provider-type=cloudhsm-jce \
-  --plugin-hsm-key-alias=my-private-key \
-  --plugin-hsm-public-key-alias=my-public-key
-```
-
-> **Note:** The CloudHSM JCE provider requires separate aliases for the private and public keys
-> because CloudHSM does not associate certificates with key entries the way Java's SunPKCS11
-> `KeyStore` does.
-
-For a complete walkthrough of setting up a QBFT network with AWS CloudHSM, see the
-[AWS CloudHSM guides](docs/aws-CloudHSM/).
+> for a complete example. Most production HSMs reject these attributes — use `native-pkcs11` or
+> `cloudhsm-jce` instead.
 
 ## Experimental: secp256r1 Curve Support
 
 The plugin supports the secp256r1 (NIST P-256) elliptic curve as an alternative to the default
-secp256k1. This is controlled by the `--plugin-hsm-ec-curve` CLI option:
+secp256k1, controlled by the `--plugin-hsm-ec-curve` CLI option:
 
 ```shell
 --plugin-hsm-ec-curve=secp256r1
@@ -188,9 +143,8 @@ Besu itself must also be configured to use secp256r1 via the `ecCurve` field in 
 See the [Besu documentation on alternative elliptic curves](https://besu.hyperledger.org/private-networks/how-to/configure/curves)
 for details.
 
-> **Note:** Alternative elliptic curve support in Besu is experimental. The secp256r1 curve has been
-> tested with SoftHSM2 in a 4-node QBFT network. When generating HSM keys for secp256r1, pass
-> `EC_CURVE=secp256r1` to the Docker setup scripts (e.g. `entrypoint-setup.sh`).
+> **Note:** Alternative elliptic curve support in Besu is experimental. The secp256r1 curve has
+> been tested with SoftHSM2 in a 4-node QBFT network.
 
 ## Known Limitations
 
@@ -205,6 +159,25 @@ PKCS#11's `CKM_ECDH1_DERIVE` returns only the x-coordinate of the ECDH shared po
 plugin recovers the y-parity needed for SEC1-compressed encoding via a second ECDH against a
 probe point (`Q + G`). This costs one extra HSM round-trip per DiscV5 handshake.
 
+### `native-pkcs11` is not compatible with AWS CloudHSM
+
+`native-pkcs11`'s ECDH recipe relies on extracting the derived shared secret out of the HSM
+through standard PKCS#11 — either by `CKA_SENSITIVE=false` + `C_GetAttributeValue(CKA_VALUE)`,
+or by the wrap-then-decrypt-with-AES-KEK encrypt-decrypt-oracle pattern. AWS CloudHSM rejects
+all of these paths: it doesn't permit non-sensitive ECDH-derived secrets, doesn't permit
+`C_GetAttributeValue(CKA_VALUE)` on a sensitive secret, doesn't accept `CKM_AES_CBC` for wrap,
+and rejects the `CKM_AES_GCM` wrap params struct in any layout we tried.
+
+`cloudhsm-jce` works on CloudHSM because it uses CloudHSM's proprietary CKA-extension protocol
+to retrieve the derived value — that's a CloudHSM-specific path that doesn't exist in standard
+PKCS#11. Reproducing it from a vendor-neutral FFM binding would mean depending on CloudHSM's
+private SDK, which defeats the purpose of `native-pkcs11`.
+
+**Use `cloudhsm-jce` for AWS CloudHSM.** `native-pkcs11` is intended for Thales Luna and any
+other HSM whose PKCS#11 implementation supports the standard wrap-decrypt-oracle pattern (sign
+will work on CloudHSM via `native-pkcs11`, but ECDH — and therefore peer handshake — will fail,
+so a validator can't actually run).
+
 ## Useful Links
 
 * [Besu User Documentation](https://besu.hyperledger.org)
@@ -213,26 +186,19 @@ probe point (`Q + G`). This costs one extra HSM round-trip per DiscV5 handshake.
 * [How to Contribute to Besu](https://lf-hyperledger.atlassian.net/wiki/spaces/BESU/pages/22156850/How+to+Contribute)
 * [Besu Maintainers](https://github.com/besu-eth/besu/blob/main/MAINTAINERS.md)
 
-## Issues
-
-Besu HSM Plugin issues are tracked [in the github issues tab][Besu HSM Plugin Issues].
-
 If you have any questions, queries or comments, [Besu channel on Discord] is the place to find us.
 
-## Besu HSM Plugin Developers
+## Development
 
 * [Contributing Guidelines]
 * [Coding Conventions](https://lf-hyperledger.atlassian.net/wiki/spaces/BESU/pages/22154259/Coding+Conventions)
-
-### Development
-
-Instructions for how to get started with developing on the Besu HSM Plugin codebase. Please also read the
-[wiki](https://lf-hyperledger.atlassian.net/wiki/spaces/BESU/pages/22154251/Pull+Requests) for more details on how to submit a pull request (PR).
+* [Pull Requests](https://lf-hyperledger.atlassian.net/wiki/spaces/BESU/pages/22154251/Pull+Requests)
+* [native-pkcs11 design notes](docs/native-pkcs11-design.md) — internals: FFM design, ECDH recipe, struct offsets, lifecycle
 
 ### Prerequisites
 
-* [Java 21+](https://adoptium.net/)
-* [Gradle](https://gradle.org/) (or use the included Gradle wrapper)
+* [Java 25+](https://adoptium.net/) — the plugin uses the Java 25 Foreign Function & Memory API
+  for the `native-pkcs11` provider.
 
 ### Building
 

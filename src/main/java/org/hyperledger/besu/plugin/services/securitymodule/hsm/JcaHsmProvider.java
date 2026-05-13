@@ -17,7 +17,6 @@ package org.hyperledger.besu.plugin.services.securitymodule.hsm;
 import static org.hyperledger.besu.plugin.services.securitymodule.hsm.Validations.requireNonNull;
 
 import com.google.common.annotations.VisibleForTesting;
-import java.math.BigInteger;
 import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
 import java.security.Provider;
@@ -79,7 +78,7 @@ abstract class JcaHsmProvider implements HsmProvider {
     this.signatureUtil = new SignatureUtil(curveParams);
     this.curveParams = curveParams;
     final ECPoint ourPubPoint = validatedPublicKey.getW();
-    validatePointOnCurve(ourPubPoint);
+    EcPointUtils.validatePointOnCurve(ourPubPoint, curveParams);
     this.ourPubKeyBc = signatureUtil.jcePointToBCPoint(ourPubPoint);
     this.useP1363 = probeP1363Support();
     this.signatureAlgorithm = useP1363 ? "NONEwithECDSAinP1363Format" : "NONEWithECDSA";
@@ -133,7 +132,7 @@ abstract class JcaHsmProvider implements HsmProvider {
   public Bytes32 calculateECDHKeyAgreement(final PublicKey partyKey) {
     LOG.debug("Calculating ECDH key agreement ...");
     final ECPoint partyEcPoint = partyKey.getW();
-    validatePointOnCurve(partyEcPoint);
+    EcPointUtils.validatePointOnCurve(partyEcPoint, curveParams);
     return calculateECDHKeyAgreementInternal(partyEcPoint);
   }
 
@@ -164,7 +163,7 @@ abstract class JcaHsmProvider implements HsmProvider {
     LOG.debug("Calculating compressed ECDH key agreement");
     try {
       final var partyEcPoint = partyKey.getW();
-      validatePointOnCurve(partyEcPoint);
+      EcPointUtils.validatePointOnCurve(partyEcPoint, curveParams);
 
       final Bytes32 xCoord = calculateECDHKeyAgreementInternal(partyEcPoint);
 
@@ -200,10 +199,10 @@ abstract class JcaHsmProvider implements HsmProvider {
 
       final boolean evenMatches =
           !sumEven.isInfinity()
-              && toBytes32(sumEven.getAffineXCoord().toBigInteger()).equals(xVerify);
+              && EcPointUtils.toBytes32(sumEven.getAffineXCoord().toBigInteger()).equals(xVerify);
       final boolean oddMatches =
           !sumOdd.isInfinity()
-              && toBytes32(sumOdd.getAffineXCoord().toBigInteger()).equals(xVerify);
+              && EcPointUtils.toBytes32(sumOdd.getAffineXCoord().toBigInteger()).equals(xVerify);
 
       if (evenMatches == oddMatches) {
         throw new SecurityModuleException(
@@ -218,37 +217,6 @@ abstract class JcaHsmProvider implements HsmProvider {
     } catch (final Exception e) {
       throw new SecurityModuleException(
           "Unexpected error while calculating compressed ECDH key agreement", e);
-    }
-  }
-
-  /**
-   * Converts a non-negative {@link BigInteger} to a 32-byte big-endian representation,
-   * right-aligning and zero-padding if the value is shorter than 32 bytes.
-   *
-   * <p>{@link BigInteger#toByteArray()} uses two's complement encoding, which may produce a leading
-   * {@code 0x00} sign byte for values with the high bit set, resulting in 33 bytes; {@link
-   * Bytes#trimLeadingZeros()} drops that, and {@link Bytes32#leftPad(Bytes)} pads shorter values to
-   * exactly 32 bytes (and rejects values that don't fit).
-   *
-   * @param value a non-negative {@link BigInteger}, typically an EC point coordinate
-   * @return a {@link Bytes32} containing the big-endian 32-byte representation of {@code value}
-   */
-  private Bytes32 toBytes32(final BigInteger value) {
-    return Bytes32.leftPad(Bytes.wrap(value.toByteArray()).trimLeadingZeros());
-  }
-
-  private void validatePointOnCurve(final ECPoint point) {
-    if (point == null || point.equals(ECPoint.POINT_INFINITY)) {
-      throw new SecurityModuleException("EC point is not on the configured curve");
-    }
-    try {
-      final var bcPoint =
-          curveParams.getBCCurve().createPoint(point.getAffineX(), point.getAffineY());
-      if (!bcPoint.isValid()) {
-        throw new SecurityModuleException("EC point is not on the configured curve");
-      }
-    } catch (final IllegalArgumentException e) {
-      throw new SecurityModuleException("EC point is not on the configured curve", e);
     }
   }
 
