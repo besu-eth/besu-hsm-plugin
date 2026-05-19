@@ -1,6 +1,6 @@
 # Besu HSM Plugin
  [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/besu-eth/besu-hsm-plugin/blob/main/LICENSE)
- [![Besu](https://img.shields.io/badge/Besu-26.4.0-blue)](https://github.com/besu-eth/besu/releases/tag/26.4.0)
+ [![Besu](https://img.shields.io/badge/Besu-26.5.0-blue)](https://github.com/besu-eth/besu/releases/tag/26.5.0)
  [![Discord](https://img.shields.io/discord/905194001349627914?logo=Hyperledger&style=plastic)](https://discord.com/invite/hyperledger)
 
 A Hardware Security Module (HSM) plugin for [Besu](https://github.com/besu-eth/besu).
