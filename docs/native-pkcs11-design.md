@@ -8,7 +8,7 @@ covers the *why* behind the implementation choices.
 
 ## 1. Why FFM (and not SunPKCS11)
 
-`generic-pkcs11` drives PKCS#11 HSMs through SunPKCS11. That works
+`sunpkcs11-jce` drives PKCS#11 HSMs through SunPKCS11. That works
 for permissive HSMs (SoftHSM2, YubiHSM2) but breaks against strict
 v2.40 implementations such as Thales Luna 7.0.3, on two fronts:
 
@@ -325,8 +325,6 @@ on CloudHSM. Use `cloudhsm-jce` for that HSM.
 - **Transparent session re-login** on `CKR_SESSION_HANDLE_INVALID`,
   `CKR_DEVICE_ERROR`, and `CKR_USER_NOT_LOGGED_IN` for HA-group
   deployments where session loss is more likely to be transient.
-- **Provider rename.** `generic-pkcs11` → `sunpkcs11` (or similar)
-  to match the implementation. Separate PR.
 
 ## 11. References
 

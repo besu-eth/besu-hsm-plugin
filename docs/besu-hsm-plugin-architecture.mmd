@@ -17,7 +17,7 @@ flowchart TB
         provider(["<b>HsmProvider</b> «interface»"]):::abstract
         nativeImpl["<b>NativePkcs11Provider</b><br/><i>native-pkcs11 (default)</i><br/>any PKCS#11 HSM via Java 25 FFM"]:::plugin
         cloudHsmImpl["<b>CloudHsmJceProvider</b><br/><i>cloudhsm-jce</i>"]:::plugin
-        pkcs11Impl["<b>Pkcs11Provider</b><br/><i>generic-pkcs11 (dev/test)</i><br/>SunPKCS11-based"]:::plugin
+        pkcs11Impl["<b>Pkcs11Provider</b><br/><i>sunpkcs11-jce (dev/test)</i><br/>SunPKCS11-based"]:::plugin
         nativeFfm["<b>Pkcs11Ffm</b><br/>java.lang.foreign binding<br/>direct dlopen of vendor PKCS#11 lib"]:::ffm
     end
 
