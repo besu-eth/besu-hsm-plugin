@@ -31,11 +31,11 @@ class HsmSecurityModuleTest {
     return options;
   }
 
-  // -- generic PKCS#11 validation tests --
+  // -- sunpkcs11-jce validation tests --
 
   @Test
-  void genericPkcs11RejectsNullConfigPath() {
-    final HsmCliOptions options = mockOptions(HsmCliOptions.HsmProviderType.GENERIC_PKCS11);
+  void sunPkcs11JceRejectsNullConfigPath() {
+    final HsmCliOptions options = mockOptions(HsmCliOptions.HsmProviderType.SUNPKCS11_JCE);
     when(options.getPkcs11ConfigPath()).thenReturn(null);
 
     assertThatThrownBy(() -> new HsmSecurityModule(options))
@@ -44,8 +44,8 @@ class HsmSecurityModuleTest {
   }
 
   @Test
-  void genericPkcs11RejectsNullPasswordPath() {
-    final HsmCliOptions options = mockOptions(HsmCliOptions.HsmProviderType.GENERIC_PKCS11);
+  void sunPkcs11JceRejectsNullPasswordPath() {
+    final HsmCliOptions options = mockOptions(HsmCliOptions.HsmProviderType.SUNPKCS11_JCE);
     when(options.getPkcs11ConfigPath()).thenReturn(Path.of("/tmp/config"));
     when(options.getPkcs11PasswordPath()).thenReturn(null);
 
@@ -55,8 +55,8 @@ class HsmSecurityModuleTest {
   }
 
   @Test
-  void genericPkcs11RejectsNullKeyAlias() {
-    final HsmCliOptions options = mockOptions(HsmCliOptions.HsmProviderType.GENERIC_PKCS11);
+  void sunPkcs11JceRejectsNullKeyAlias() {
+    final HsmCliOptions options = mockOptions(HsmCliOptions.HsmProviderType.SUNPKCS11_JCE);
     when(options.getPkcs11ConfigPath()).thenReturn(Path.of("/tmp/config"));
     when(options.getPkcs11PasswordPath()).thenReturn(Path.of("/tmp/password"));
     when(options.getPrivateKeyAlias()).thenReturn(null);

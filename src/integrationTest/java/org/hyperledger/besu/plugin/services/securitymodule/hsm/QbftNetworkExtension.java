@@ -88,11 +88,11 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
   private List<GenericContainer<?>> besuContainers;
 
   QbftNetworkExtension(final String ecCurve) {
-    this(ecCurve, false, "generic-pkcs11");
+    this(ecCurve, false, "sunpkcs11-jce");
   }
 
   QbftNetworkExtension(final String ecCurve, final boolean v5Discovery) {
-    this(ecCurve, v5Discovery, "generic-pkcs11");
+    this(ecCurve, v5Discovery, "sunpkcs11-jce");
   }
 
   QbftNetworkExtension(final String ecCurve, final boolean v5Discovery, final String providerType) {

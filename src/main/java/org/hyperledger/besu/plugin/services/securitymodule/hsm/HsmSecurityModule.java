@@ -54,7 +54,7 @@ public class HsmSecurityModule implements SecurityModule, AutoCloseable {
   private static HsmProvider createHsmProvider(
       final HsmCliOptions cliOptions, final EcCurveParameters curveParams) {
     return switch (cliOptions.getProviderType()) {
-      case GENERIC_PKCS11 -> Pkcs11Provider.create(cliOptions, curveParams);
+      case SUNPKCS11_JCE -> Pkcs11Provider.create(cliOptions, curveParams);
       case CLOUDHSM_JCE -> CloudHsmJceProvider.create(cliOptions, curveParams);
       case NATIVE_PKCS11 -> NativePkcs11Provider.create(cliOptions, curveParams);
     };

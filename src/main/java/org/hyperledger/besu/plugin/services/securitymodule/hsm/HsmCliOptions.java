@@ -71,7 +71,7 @@ public class HsmCliOptions {
 
   enum HsmProviderType {
     NATIVE_PKCS11("native-pkcs11"),
-    GENERIC_PKCS11("generic-pkcs11"),
+    SUNPKCS11_JCE("sunpkcs11-jce"),
     CLOUDHSM_JCE("cloudhsm-jce");
 
     private final String typeName;

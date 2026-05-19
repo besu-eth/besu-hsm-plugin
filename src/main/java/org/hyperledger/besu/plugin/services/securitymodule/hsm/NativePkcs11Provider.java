@@ -44,10 +44,10 @@ import org.slf4j.LoggerFactory;
  * CKM_ECDH1_DERIVE}).
  *
  * <p>This provider uses the same {@code --plugin-hsm-config-path}, {@code -password-path}, {@code
- * -key-alias} CLI options as the {@code generic-pkcs11} provider; the config file is parsed for
+ * -key-alias} CLI options as the {@code sunpkcs11-jce} provider; the config file is parsed for
  * {@code library = <path>} and either {@code slot = <int>} or {@code slotListIndex = <int>} (other
  * SunPKCS11 directives are ignored). The same config file therefore typically works unchanged for
- * both providers. Unlike the generic-pkcs11 path, this provider does NOT require a self-signed cert
+ * both providers. Unlike the sunpkcs11-jce path, this provider does NOT require a self-signed cert
  * to be associated with the private-key alias on the HSM — keys are looked up directly by {@code
  * CKA_LABEL}.
  *

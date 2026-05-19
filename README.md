@@ -9,7 +9,7 @@ private keys secure in dedicated hardware rather than in software.
 
 Three provider modes are supported. The default is `native-pkcs11`, which works with any
 [PKCS#11](https://en.wikipedia.org/wiki/PKCS_11) HSM and is recommended for production.
-`cloudhsm-jce` is the production path for AWS CloudHSM, and `generic-pkcs11` is a dev/test
+`cloudhsm-jce` is the production path for AWS CloudHSM, and `sunpkcs11-jce` is a dev/test
 option targeting SoftHSM2.
 
 ## Providers
@@ -24,7 +24,7 @@ Pick the provider that matches your HSM. The CLI flag values listed below are wh
 - **`cloudhsm-jce`** *(production, AWS CloudHSM only)* — Uses the [AWS CloudHSM JCE provider](https://docs.aws.amazon.com/cloudhsm/latest/userguide/java-library-install.html)
   directly, with no PKCS#11 configuration file. Authenticates via the `HSM_USER` and `HSM_PASSWORD`
   environment variables.
-- **`generic-pkcs11`** *(dev/test only)* — Targets **SoftHSM2** for local development and
+- **`sunpkcs11-jce`** *(dev/test only)* — Targets **SoftHSM2** for local development and
   integration tests. ECDH compatibility with production HSMs is **not** guaranteed; most strict
   v2.40 HSMs reject the required peer-point format. Requires `CKA_SENSITIVE=false` on derived
   secrets and a self-signed certificate associated with the private key on the token.
@@ -45,7 +45,7 @@ generation steps, are in:
 
 - **Thales Luna** (PCIe / network HSM, `native-pkcs11`) — [`docs/thales-luna/README.md`](docs/thales-luna/README.md)
 - **AWS CloudHSM** (`cloudhsm-jce`) — [`docs/aws-CloudHSM/`](docs/aws-CloudHSM/)
-- **SoftHSM2** (local dev/test, `generic-pkcs11`) — [`docker/softhsm2/`](docker/softhsm2/)
+- **SoftHSM2** (local dev/test, `sunpkcs11-jce`) — [`docker/softhsm2/`](docker/softhsm2/)
 
 ## Plugin CLI Options
 
@@ -53,9 +53,9 @@ The plugin registers the following CLI options with Besu:
 
 | Option | Description | Required |
 |--------|-------------|----------|
-| `--plugin-hsm-provider-type` | Provider type: `native-pkcs11` (default), `cloudhsm-jce`, or `generic-pkcs11` | No |
-| `--plugin-hsm-config-path` | Path to the PKCS#11 configuration file | `native-pkcs11` and `generic-pkcs11` |
-| `--plugin-hsm-password-path` | Path to the file containing the token PIN/password | `native-pkcs11` and `generic-pkcs11` |
+| `--plugin-hsm-provider-type` | Provider type: `native-pkcs11` (default), `cloudhsm-jce`, or `sunpkcs11-jce` | No |
+| `--plugin-hsm-config-path` | Path to the PKCS#11 configuration file | `native-pkcs11` and `sunpkcs11-jce` |
+| `--plugin-hsm-password-path` | Path to the file containing the token PIN/password | `native-pkcs11` and `sunpkcs11-jce` |
 | `--plugin-hsm-key-alias` | Alias/label of the private key on the HSM | Yes |
 | `--plugin-hsm-public-key-alias` | Alias/label of the public key on the HSM | `cloudhsm-jce` only |
 | `--plugin-hsm-cloudhsm-jar-path` | Path to CloudHSM JCE jar file or directory (default: `/opt/cloudhsm/java`) | No |
@@ -101,11 +101,11 @@ besu --security-module=hsm \
 
 See the [AWS CloudHSM guides](docs/aws-CloudHSM/) for cluster setup and a full QBFT walkthrough.
 
-### `generic-pkcs11` example *(dev/test)*
+### `sunpkcs11-jce` example *(dev/test)*
 
 ```shell
 besu --security-module=hsm \
-  --plugin-hsm-provider-type=generic-pkcs11 \
+  --plugin-hsm-provider-type=sunpkcs11-jce \
   --plugin-hsm-config-path=/etc/besu/pkcs11.cfg \
   --plugin-hsm-password-path=/etc/besu/hsm-pin.txt \
   --plugin-hsm-key-alias=mykey
