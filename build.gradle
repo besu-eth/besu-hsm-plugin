@@ -171,7 +171,8 @@ spotless {
   // spotless check applied to build.gradle (groovy) files
   groovyGradle {
     target '*.gradle'
-    greclipse('4.31').configFile(layout.projectDirectory.file('gradle/spotless/greclipse.properties'))
+    leadingTabsToSpaces(2)
+    trimTrailingWhitespace()
     endWithNewline()
   }
 }
