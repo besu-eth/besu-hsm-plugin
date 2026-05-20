@@ -31,6 +31,7 @@ import java.nio.CharBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.Locale;
 import org.hyperledger.besu.plugin.services.securitymodule.SecurityModuleException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -359,7 +360,11 @@ final class Pkcs11Ffm implements AutoCloseable {
       final byte[] pinBytes = new byte[pinEncoded.remaining()];
       pinEncoded.get(pinBytes);
       if (pinEncoded.hasArray()) {
-        Arrays.fill(pinEncoded.array(), (byte) 0);
+        Arrays.fill(
+            pinEncoded.array(),
+            pinEncoded.arrayOffset(),
+            pinEncoded.arrayOffset() + pinEncoded.capacity(),
+            (byte) 0);
       }
       final MemorySegment pinSeg = arena.allocateFrom(JAVA_BYTE, pinBytes);
       final long loginRv;
@@ -676,7 +681,7 @@ final class Pkcs11Ffm implements AutoCloseable {
               + ValueLayout.ADDRESS.byteSize()
               + " bytes");
     }
-    final String os = System.getProperty("os.name", "").toLowerCase();
+    final String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
     if (!(os.contains("linux") || os.contains("mac") || os.contains("darwin"))) {
       throw new SecurityModuleException(
           "native-pkcs11 currently supports 64-bit Linux and macOS only; got os.name='"
