@@ -4,7 +4,7 @@
 besu = "26.5.0" # used by besuPlugin in build.gradle
 besu-plugin-distribution = "0.2.1"
 git-versioning = "6.4.4"
-spotless = "8.4.0"
+spotless = "8.5.1"
 assertj = "3.27.7"
 testcontainers = "2.0.5"
 errorprone = "2.49.0"
