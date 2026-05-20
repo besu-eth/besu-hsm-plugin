@@ -46,7 +46,7 @@ jobs:
       uses: gradle/actions/setup-gradle@50e97c2cd7a37755bbfafc9c5b7cafaece252f6e # v6.1.0
 
     - name: Run integration tests
-      run: ./gradlew integrationTest --info
+      run: ./gradlew integrationTest
 
     - name: Upload integration test reports
       if: always()
