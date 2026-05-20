@@ -22,7 +22,7 @@ plugins {
   alias libs.plugins.errorprone
 }
 
-version = "0.0.0-SNAPSHOT"
+version = "0.0.0-dev"
 
 gitVersioning.apply {
   refs {
@@ -30,14 +30,14 @@ gitVersioning.apply {
       version = "\${ref}"
     }
     branch("main") {
-      version = "\${ref}-SNAPSHOT"
+      version = "\${ref}-dev"
     }
     branch(".+") {
-      version = "\${ref}-SNAPSHOT"
+      version = "\${ref}-dev"
     }
   }
   rev {
-    version = "\${commit.short}-SNAPSHOT"
+    version = "\${commit.short}-dev"
   }
 }
 
