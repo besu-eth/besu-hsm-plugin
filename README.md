@@ -4,8 +4,11 @@
  [![Discord](https://img.shields.io/discord/905194001349627914?logo=Hyperledger&style=plastic)](https://discord.com/invite/hyperledger)
 
 A Hardware Security Module (HSM) plugin for [Besu](https://github.com/besu-eth/besu).
-This plugin enables Besu validators to delegate cryptographic signing operations to an HSM, keeping
-private keys secure in dedicated hardware rather than in software.
+This plugin abstracts Besu's node key operations by offloading the node private key into a
+physical HSM such as Thales Luna, AWS CloudHSM, or any PKCS#11-compliant HSM. The node key
+is used for devp2p peer handshakes (ECDH), peer discovery (DiscV4/DiscV5), and BFT consensus
+signing (QBFT/IBFT2). It is **not** used to sign transactions — transaction signing is handled
+separately by account keys.
 
 Three provider modes are supported. The default is `native-pkcs11`, which works with any
 [PKCS#11](https://en.wikipedia.org/wiki/PKCS_11) HSM and is recommended for production.
@@ -37,6 +40,37 @@ Pick the provider that matches your HSM. The CLI flag values listed below are wh
 The plugin sits between Besu's validator process and the HSM, registering with Besu's
 `SecurityModuleService`. Provider selection, key aliases, and authentication are configured via
 plugin CLI options.
+
+## Installation
+
+### 1. Get the plugin distribution
+
+**Download** the pre-built zip from the
+[GitHub Releases](https://github.com/besu-eth/besu-hsm-plugin/releases) page.
+
+**Or build from source:**
+
+```bash
+./gradlew distZip
+```
+
+The distribution zip is generated at `build/distributions/besu-hsm-plugin-<version>.zip`.
+
+### 2. Install into Besu
+
+Extract the zip and copy the plugin JAR into Besu's `plugins/` directory:
+
+```bash
+unzip besu-hsm-plugin-<version>.zip
+cp besu-hsm-plugin-<version>/besu-hsm-plugin-<version>.jar /path/to/besu/plugins/
+```
+
+Besu auto-discovers JARs placed in that directory at startup — no classpath flag is needed.
+
+### 3. Enable the plugin
+
+Start Besu with `--security-module=hsm` plus the provider-specific options described in the
+[Plugin CLI Options](#plugin-cli-options) section and the deployment guides below.
 
 ## Deployment Guides
 
