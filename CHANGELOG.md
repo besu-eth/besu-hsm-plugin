@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- Update Besu dependency to 26.6.0
+
 ## 26.5.0
 
 ### Added
