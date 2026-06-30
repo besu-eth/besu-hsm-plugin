@@ -21,9 +21,9 @@ Pick the provider that matches your HSM. The CLI flag values listed below are wh
 `--plugin-hsm-provider-type`.
 
 - **`native-pkcs11`** *(default, recommended for production)* — Works with any PKCS#11 v2.40 HSM,
-  including strict-spec HSMs such as **Thales Luna**. No certificate is required alongside the
-  private key on the token. Not currently compatible with **AWS CloudHSM** — see Known
-  Limitations.
+  including strict-spec HSMs such as **Thales Luna** and **Utimaco GP HSM**. No certificate is
+  required alongside the private key on the token. Not currently compatible with
+  **AWS CloudHSM** — see Known Limitations.
 - **`cloudhsm-jce`** *(production, AWS CloudHSM only)* — Uses the [AWS CloudHSM JCE provider](https://docs.aws.amazon.com/cloudhsm/latest/userguide/java-library-install.html)
   directly, with no PKCS#11 configuration file. Authenticates via the `HSM_USER` and `HSM_PASSWORD`
   environment variables.
@@ -78,6 +78,7 @@ Full walkthroughs for setting up a QBFT validator network on each supported HSM,
 generation steps, are in:
 
 - **Thales Luna** (PCIe / network HSM, `native-pkcs11`) — [`docs/thales-luna/README.md`](docs/thales-luna/README.md)
+- **Utimaco u.trust General Purpose HSM** (simulator + hardware, `native-pkcs11`) — [`docs/utimaco/README.md`](docs/utimaco/README.md)
 - **AWS CloudHSM** (`cloudhsm-jce`) — [`docs/aws-CloudHSM/`](docs/aws-CloudHSM/)
 - **SoftHSM2** (local dev/test, `sunpkcs11-jce`) — [`docker/softhsm2/`](docker/softhsm2/)
 
