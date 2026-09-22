@@ -21,7 +21,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 /**
- * Runs the QBFT HSM integration tests with {@code --Xv5-discovery-enabled} on the secp256k1 curve.
+ * Runs the QBFT HSM integration tests with {@code --discovery-mode=V5} on the secp256k1 curve.
  * Exercises {@link JcaHsmProvider#calculateECDHKeyAgreementCompressed} end-to-end via DiscV5
  * handshakes between SoftHSM2-backed validators. DiscV5 is only valid for secp256k1 (per the ENR v4
  * identity scheme), so no secp256r1 variant exists.
@@ -29,7 +29,8 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 class QbftSecp256k1V5DiscoveryIntegrationTest extends QbftHsmIntegrationTestBase {
 
   @RegisterExtension
-  static final QbftNetworkExtension NETWORK = new QbftNetworkExtension("secp256k1", true);
+  static final QbftNetworkExtension NETWORK =
+      new QbftNetworkExtension("secp256k1", DiscoveryMode.V5);
 
   @Override
   QbftNetworkExtension network() {

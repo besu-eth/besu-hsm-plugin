@@ -34,7 +34,7 @@ class QbftSecp256r1NativePkcs11IntegrationTest extends QbftHsmIntegrationTestBas
 
   @RegisterExtension
   static final QbftNetworkExtension NETWORK =
-      new QbftNetworkExtension("secp256r1", false, "native-pkcs11");
+      new QbftNetworkExtension("secp256r1", DiscoveryMode.BOTH, "native-pkcs11");
 
   @Override
   QbftNetworkExtension network() {

@@ -14,17 +14,17 @@
  */
 package org.hyperledger.besu.plugin.services.securitymodule.hsm;
 
-import org.junit.jupiter.api.extension.RegisterExtension;
-
-/** Runs the QBFT HSM integration tests using the secp256k1 curve (Ethereum default). */
-class QbftSecp256k1IntegrationTest extends QbftHsmIntegrationTestBase {
-
-  @RegisterExtension
-  static final QbftNetworkExtension NETWORK =
-      new QbftNetworkExtension("secp256k1", DiscoveryMode.BOTH);
-
-  @Override
-  QbftNetworkExtension network() {
-    return NETWORK;
-  }
+/**
+ * Which discovery protocol(s) the QBFT test nodes run, pinned on the command line as Besu's {@code
+ * --discovery-mode} rather than relying on Besu's default.
+ */
+enum DiscoveryMode {
+  /**
+   * DiscV4 and DiscV5 concurrently on a shared UDP socket. Besu degrades this to V4-only when the
+   * node key curve cannot sign an ENR, so a secp256r1 node still starts and discovers peers over
+   * DiscV4.
+   */
+  BOTH,
+  /** DiscV5 only; requires a secp256k1 node key. */
+  V5
 }

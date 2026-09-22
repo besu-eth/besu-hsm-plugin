@@ -231,10 +231,12 @@ Three TestContainers-based integration tests in
 every validator's keys in a SoftHSM2 token, exercising the full FFM
 path on every sign and every handshake:
 
-- `QbftSecp256k1NativePkcs11IntegrationTest` — DiscV4 + secp256k1.
-- `QbftSecp256r1NativePkcs11IntegrationTest` — DiscV4 + secp256r1.
-- `QbftSecp256k1NativePkcs11V5DiscoveryIntegrationTest` — DiscV5;
-  exercises compressed-ECDH end-to-end.
+- `QbftSecp256k1NativePkcs11IntegrationTest` — DiscV4 + DiscV5
+  (`--discovery-mode=BOTH`) + secp256k1.
+- `QbftSecp256r1NativePkcs11IntegrationTest` — secp256r1; requests BOTH,
+  which Besu degrades to DiscV4-only since an ENR needs a secp256k1 key.
+- `QbftSecp256k1NativePkcs11V5DiscoveryIntegrationTest` — DiscV5 only
+  (`--discovery-mode=V5`); exercises compressed-ECDH end-to-end.
 
 `NativePkcs11ProviderTest` covers the static helpers (`parseConfig`,
 `parseEcPoint`, `derWrapPoint`, `bigIntToFixedLength`), including

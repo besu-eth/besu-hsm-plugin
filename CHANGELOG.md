@@ -1,6 +1,11 @@
 # Changelog
 
-## 26.6.0 - 26.7.0
+## 26.9.0
+
+### Changed
+- Integration tests now pin Besu's discovery mode explicitly instead of relying on its default: `--discovery-mode=BOTH` for the QBFT network tests and `--discovery-mode=V5` for the DiscV5-specific ones. The experimental `--Xv5-discovery-enabled` flag these tests used was removed in Besu 26.8.0.
+
+## 26.6.0 - 26.8.1
 
 ### Added
 - Update Besu plugin dependencies

@@ -21,7 +21,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 /**
- * Runs the QBFT HSM integration tests with {@code --Xv5-discovery-enabled} on the secp256k1 curve,
+ * Runs the QBFT HSM integration tests with {@code --discovery-mode=V5} on the secp256k1 curve,
  * routed through the {@code native-pkcs11} provider (Java 25 FFM binding into {@code
  * libsofthsm2.so}). Exercises {@link
  * NativePkcs11Provider#calculateECDHKeyAgreementCompressed(org.hyperledger.besu.plugin.services.securitymodule.data.PublicKey)}
@@ -32,7 +32,7 @@ class QbftSecp256k1NativePkcs11V5DiscoveryIntegrationTest extends QbftHsmIntegra
 
   @RegisterExtension
   static final QbftNetworkExtension NETWORK =
-      new QbftNetworkExtension("secp256k1", true, "native-pkcs11");
+      new QbftNetworkExtension("secp256k1", DiscoveryMode.V5, "native-pkcs11");
 
   @Override
   QbftNetworkExtension network() {
