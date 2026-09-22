@@ -1,6 +1,6 @@
 # Besu HSM Plugin
  [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/besu-eth/besu-hsm-plugin/blob/main/LICENSE)
- [![Besu](https://img.shields.io/badge/Besu-26.7.0-blue)](https://github.com/besu-eth/besu/releases/tag/26.7.0)
+ [![Besu](https://img.shields.io/badge/Besu-26.8.1-blue)](https://github.com/besu-eth/besu/releases/tag/26.8.1)
  [![Discord](https://img.shields.io/discord/905194001349627914?logo=Hyperledger&style=plastic)](https://discord.com/invite/hyperledger)
 
 A Hardware Security Module (HSM) plugin for [Besu](https://github.com/besu-eth/besu).
@@ -189,6 +189,10 @@ DiscV5 is supported with HSM-backed keys, but only on the **secp256k1** curve. B
 implementation (and the underlying ENR v4 identity scheme) is fixed to secp256k1, so HSM keys on
 the **secp256r1** curve cannot participate in DiscV5 peer discovery. Use DiscV4 (`--bootnodes`)
 or static peering (`--static-nodes-file`) for secp256r1 deployments.
+
+On Besu 26.8.0 and later, discovery defaults to DiscV4 — enable DiscV5 with `--discovery-mode=V5`
+(or `--discovery-mode=BOTH`). The experimental `--Xv5-discovery-enabled` flag was removed in
+26.8.0.
 
 PKCS#11's `CKM_ECDH1_DERIVE` returns only the x-coordinate of the ECDH shared point, so the
 plugin recovers the y-parity needed for SEC1-compressed encoding via a second ECDH against a

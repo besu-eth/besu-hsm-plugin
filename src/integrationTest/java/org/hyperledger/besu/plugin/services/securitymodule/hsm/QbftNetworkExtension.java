@@ -62,6 +62,7 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
   private static final int NODE_COUNT = 4;
   private static final String IMAGE_NAME = "besu-hsm-test";
   private static final String BESU_VERSION = System.getProperty("besu.version", "develop");
+  private static final String V5_CAPABLE_CURVE = "secp256k1";
   private static final Path DOCKER_DIR =
       Path.of(System.getProperty("user.dir"), "docker", "softhsm2");
   private static final Path DIST_DIR =
@@ -76,7 +77,7 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
   private static final ObjectMapper MAPPER = new ObjectMapper();
 
   private final String ecCurve;
-  private final boolean v5Discovery;
+  private final DiscoveryMode discoveryMode;
   private final String providerType;
   private final Path distZip;
 
@@ -87,17 +88,14 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
   private List<Path> tokenDirs;
   private List<GenericContainer<?>> besuContainers;
 
-  QbftNetworkExtension(final String ecCurve) {
-    this(ecCurve, false, "sunpkcs11-jce");
+  QbftNetworkExtension(final String ecCurve, final DiscoveryMode discoveryMode) {
+    this(ecCurve, discoveryMode, "sunpkcs11-jce");
   }
 
-  QbftNetworkExtension(final String ecCurve, final boolean v5Discovery) {
-    this(ecCurve, v5Discovery, "sunpkcs11-jce");
-  }
-
-  QbftNetworkExtension(final String ecCurve, final boolean v5Discovery, final String providerType) {
+  QbftNetworkExtension(
+      final String ecCurve, final DiscoveryMode discoveryMode, final String providerType) {
     this.ecCurve = ecCurve;
-    this.v5Discovery = v5Discovery;
+    this.discoveryMode = discoveryMode;
     this.providerType = providerType;
     this.distZip = findDistZip();
   }
@@ -134,9 +132,9 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
     // Phase 3: Start QBFT network
     besuContainers = new ArrayList<>();
     startBootnode();
-    final String bootnodeUri = getBootnodeUri(v5Discovery ? "enr" : "enode");
+    final String bootnodeSeeds = bootnodeUris();
     for (int i = 1; i < NODE_COUNT; i++) {
-      startValidatorNode(i, bootnodeUri);
+      startValidatorNode(i, bootnodeSeeds);
     }
   }
 
@@ -322,6 +320,24 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
     return uri.get();
   }
 
+  /**
+   * Bootnode seed URIs matching the configured {@link DiscoveryMode}.
+   *
+   * <p>{@link DiscoveryMode#V5} nodes discover only over DiscV5, so they are seeded with the
+   * bootnode's {@code enr:} record. {@link DiscoveryMode#BOTH} nodes are seeded with the {@code
+   * enode://} URL for the DiscV4 agent, plus the {@code enr:} record when the node key curve can
+   * sign an ENR (EIP-778's identity scheme mandates secp256k1) so the DiscV5 agent bootstraps too.
+   *
+   * @return comma-separated bootnode URIs
+   */
+  private String bootnodeUris() {
+    if (discoveryMode == DiscoveryMode.V5) {
+      return getBootnodeUri("enr");
+    }
+    final String enode = getBootnodeUri("enode");
+    return V5_CAPABLE_CURVE.equals(ecCurve) ? enode + "," + getBootnodeUri("enr") : enode;
+  }
+
   private static JsonNode adminNodeInfo(final GenericContainer<?> container)
       throws IOException, InterruptedException {
     final int port = container.getMappedPort(RPC_PORT);
@@ -340,7 +356,7 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
     return json.get("result");
   }
 
-  private void startValidatorNode(final int nodeIndex, final String bootnodeUri) {
+  private void startValidatorNode(final int nodeIndex, final String bootnodeSeeds) {
     final ToStringConsumer logConsumer = new ToStringConsumer();
 
     final GenericContainer<?> container =
@@ -355,7 +371,7 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
             .withCreateContainerCmdModifier(
                 cmd -> {
                   cmd.withEntrypoint("/bin/sh", "-c");
-                  cmd.withCmd(besuCommand(bootnodeUri));
+                  cmd.withCmd(besuCommand(bootnodeSeeds));
                 })
             .withLogConsumer(logConsumer)
             .waitingFor(
@@ -366,7 +382,7 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
     besuContainers.add(container);
   }
 
-  private String besuCommand(final String bootnodeUri) {
+  private String besuCommand(final String bootnodeSeeds) {
     final StringBuilder cmd = new StringBuilder();
     cmd.append(INSTALL_PLUGIN_CMD);
     cmd.append(" && /entrypoint-besu.sh");
@@ -389,11 +405,11 @@ class QbftNetworkExtension implements BeforeAllCallback, AfterAllCallback {
     // `hostname -i` may emit IPv6 first; filter the first IPv4 from the output.
     cmd.append(
         " --p2p-host=\"$(hostname -i | grep -oE '[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+' | head -1)\"");
-    if (v5Discovery) {
-      cmd.append(" --Xv5-discovery-enabled");
-    }
-    if (bootnodeUri != null) {
-      cmd.append(" --bootnodes=").append(bootnodeUri);
+    // Pinned explicitly rather than relying on Besu's default, which is V4 today and slated to
+    // become BOTH.
+    cmd.append(" --discovery-mode=").append(discoveryMode);
+    if (bootnodeSeeds != null) {
+      cmd.append(" --bootnodes=").append(bootnodeSeeds);
     }
     return cmd.toString();
   }

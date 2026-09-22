@@ -29,7 +29,8 @@ class QbftSecp256r1IntegrationTest extends QbftHsmIntegrationTestBase {
       new BigInteger("8f2a55949038a9610f50fb23b5883af3b4ecb3c3bb792cbcefbd1542c692be63", 16);
 
   @RegisterExtension
-  static final QbftNetworkExtension NETWORK = new QbftNetworkExtension("secp256r1");
+  static final QbftNetworkExtension NETWORK =
+      new QbftNetworkExtension("secp256r1", DiscoveryMode.BOTH);
 
   @Override
   QbftNetworkExtension network() {
