@@ -825,6 +825,7 @@ When this guide is the basis for a production deployment, also do:
 - Architecture diagram:
   [`../besu-hsm-plugin-architecture.png`](../besu-hsm-plugin-architecture.png)
 - AWS CloudHSM guide for comparison: [`../aws-CloudHSM/`](../aws-CloudHSM/)
+- Luna Cloud HSM (DPoD) guide: [`../thales-luna-cloud/`](../thales-luna-cloud/)
 
 ## References
 
