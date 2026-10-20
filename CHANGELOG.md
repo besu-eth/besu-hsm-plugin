@@ -1,5 +1,10 @@
 # Changelog
 
+## 26.10.0
+
+### Changed
+- Update Besu plugin version to 26.10.0
+
 ## 26.9.1
 
 ### Changed
