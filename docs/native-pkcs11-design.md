@@ -71,9 +71,12 @@ Each call to `Pkcs11Ffm.deriveEcdh(byte[] peerPointDer)` runs:
    - `sensitive=true` satisfies cap 1=0 and prevents direct readback.
    - `extractable=true` is what `C_WrapKey` needs on its source key
      (a non-extractable key is `CKR_KEY_NOT_WRAPPABLE`).
-2. **`C_WrapKey`** with mechanism `CKM_AES_CBC`, IV all-zeros, the
-   long-lived KEK as wrapping key, the derived secret as source.
-   Output is exactly 32 bytes (two AES blocks).
+2. **`C_WrapKey`** with the AES wrap mechanism selected at open time
+   (`CKM_AES_CBC` with an all-zero IV if the token advertises it for
+   wrap + decrypt, otherwise Luna AES Key Wrap — see "Wrap mechanism
+   selection" below), the long-lived KEK as wrapping key, the derived
+   secret as source. Output is 32 bytes for CBC (two AES blocks) and 40
+   bytes for AES KW (RFC 3394 adds an 8-byte integrity block).
 3. **`C_DecryptInit` + `C_Decrypt`** with the same KEK and same
    mechanism. The result is the original plaintext shared secret.
 4. **`C_DestroyObject`** on the derived secret handle (in a `finally`
@@ -97,6 +100,26 @@ consumed by the very next decrypt call in the same method, in the
 same arena — nothing outside `deriveEcdh` ever sees it. IV
 uniqueness doesn't matter when the ciphertext is not a
 confidentiality boundary.
+
+### Wrap mechanism selection
+
+FIPS-approved-configuration Luna (e.g. Luna Cloud HSM) refuses to wrap
+with `CKM_AES_CBC`: `C_WrapKey` returns `CKR_MECHANISM_INVALID (0x70)`,
+and `C_GetMechanismInfo` reports the mechanism without `CKF_WRAP`
+(Thales Compliance Guide: CBC, CBC_PAD, CTR and ECB are unwrap-only
+since firmware 7.7.0). `Pkcs11Ffm.open()` therefore probes
+`C_GetMechanismInfo` once and chooses, in order, the first of
+`CKM_AES_CBC` and Luna's AES KW (`0x80000170`, no parameter) whose flags
+include both `CKF_WRAP` and `CKF_DECRYPT`. Probing up front keeps the
+choice deterministic and visible in the log, instead of discovering the
+incompatibility mid-handshake and retrying. If no candidate is
+advertised the provider keeps `CKM_AES_CBC` (and warns), so tokens that
+support CBC wrap without advertising the flag do not regress.
+
+This fixes only the wrap step. A FIPS-mode Luna partition also rejects
+`CKM_ECDH1_DERIVE` with `CKD_NULL` (`C_DeriveKey` → `0x71`), which the
+recipe cannot work around — see
+[`thales-luna-cloud/README.md`](thales-luna-cloud/README.md) §9.
 
 ## 3. Compressed ECDH for DiscV5
 

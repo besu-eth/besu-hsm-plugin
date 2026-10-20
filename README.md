@@ -78,6 +78,7 @@ Full walkthroughs for setting up a QBFT validator network on each supported HSM,
 generation steps, are in:
 
 - **Thales Luna** (PCIe / network HSM, `native-pkcs11`) — [`docs/thales-luna/README.md`](docs/thales-luna/README.md)
+- **Thales Luna Cloud HSM** (DPoD, `native-pkcs11`; signing works, ECDH is blocked by the service's FIPS mode) — [`docs/thales-luna-cloud/README.md`](docs/thales-luna-cloud/README.md)
 - **Utimaco u.trust General Purpose HSM** (simulator + hardware, `native-pkcs11`) — [`docs/utimaco/README.md`](docs/utimaco/README.md)
 - **AWS CloudHSM** (`cloudhsm-jce`) — [`docs/aws-CloudHSM/`](docs/aws-CloudHSM/)
 - **SoftHSM2** (local dev/test, `sunpkcs11-jce`) — [`docker/softhsm2/`](docker/softhsm2/)

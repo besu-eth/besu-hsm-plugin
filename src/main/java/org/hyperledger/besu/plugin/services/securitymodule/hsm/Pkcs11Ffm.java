@@ -31,7 +31,10 @@ import java.nio.CharBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
+import java.util.function.LongUnaryOperator;
 import org.hyperledger.besu.plugin.services.securitymodule.SecurityModuleException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -83,11 +86,17 @@ final class Pkcs11Ffm implements AutoCloseable {
   private static final long CKM_ECDSA = 0x00001041L;
   private static final long CKM_ECDH1_DERIVE = 0x00001050L;
   private static final long CKM_AES_KEY_GEN = 0x00001080L;
-  // CKM_AES_CBC (no PKCS#7 padding) is used for both wrap and decrypt of the 32-byte derived
-  // ECDH secret. The padded variant (CKM_AES_CBC_PAD = 0x1085) is rejected by SoftHSM2 as a
-  // wrapping mechanism (returns CKR_MECHANISM_INVALID); CKM_AES_CBC is universally supported
-  // and is sufficient since 32 bytes is already a multiple of the 16-byte AES block size.
+  // Wrap-oracle mechanisms. See WrapMechanism / chooseWrapMechanism: CKM_AES_CBC (no PKCS#7
+  // padding) is preferred because every HSM we ran this against before Luna Cloud (SoftHSM2,
+  // Utimaco, on-prem Luna) supports it for wrap + decrypt, and 32 bytes is already a multiple of
+  // the 16-byte AES block size. The padded variant (CKM_AES_CBC_PAD = 0x1085) is rejected by
+  // SoftHSM2 as a wrapping mechanism. FIPS-approved-configuration Luna (e.g. Luna Cloud HSM)
+  // refuses to wrap with CKM_AES_CBC (CKR_MECHANISM_INVALID, 0x70), so we fall back to Luna's
+  // AES Key Wrap, which is FIPS-approved for wrap and decrypt.
   private static final long CKM_AES_CBC = 0x00001082L;
+  private static final long CKM_LUNA_AES_KW = 0x80000170L;
+  private static final long CKF_DECRYPT = 0x00000200L;
+  private static final long CKF_WRAP = 0x00020000L;
   private static final long CKD_NULL = 0x00000001L;
   private static final long CKU_USER = 0x00000001L;
   // Session flags for C_OpenSession. CKF_SERIAL_SESSION is mandatory per PKCS#11 v2.40.
@@ -116,6 +125,7 @@ final class Pkcs11Ffm implements AutoCloseable {
   private static final long OFF_C_INITIALIZE = 8;
   private static final long OFF_C_FINALIZE = 16;
   private static final long OFF_C_GET_SLOT_LIST = 40;
+  private static final long OFF_C_GET_MECHANISM_INFO = 72;
   private static final long OFF_C_OPEN_SESSION = 104;
   private static final long OFF_C_CLOSE_SESSION = 112;
   private static final long OFF_C_LOGIN = 152;
@@ -165,6 +175,7 @@ final class Pkcs11Ffm implements AutoCloseable {
   private final long session;
   private final long privKeyHandle;
   private final long kekHandle;
+  private final WrapMechanism wrapMech;
   private final byte[] cachedEcPoint; // 65-byte uncompressed point, 04 || X || Y
   private final boolean weInitialized; // whether we called C_Initialize (vs. it was already done)
   private final Object lock = new Object();
@@ -193,6 +204,7 @@ final class Pkcs11Ffm implements AutoCloseable {
       final long session,
       final long privKeyHandle,
       final long kekHandle,
+      final WrapMechanism wrapMech,
       final byte[] cachedEcPoint,
       final boolean weInitialized,
       final MethodHandle hFinalize,
@@ -209,6 +221,7 @@ final class Pkcs11Ffm implements AutoCloseable {
     this.session = session;
     this.privKeyHandle = privKeyHandle;
     this.kekHandle = kekHandle;
+    this.wrapMech = wrapMech;
     this.cachedEcPoint = cachedEcPoint;
     this.weInitialized = weInitialized;
     this.hFinalize = hFinalize;
@@ -322,6 +335,8 @@ final class Pkcs11Ffm implements AutoCloseable {
           bind(fl, OFF_C_WRAP_KEY, JAVA_LONG, ADDRESS, JAVA_LONG, JAVA_LONG, ADDRESS, ADDRESS);
       final MethodHandle hDeriveKey =
           bind(fl, OFF_C_DERIVE_KEY, JAVA_LONG, ADDRESS, JAVA_LONG, ADDRESS, JAVA_LONG, ADDRESS);
+      final MethodHandle hGetMechanismInfo =
+          bind(fl, OFF_C_GET_MECHANISM_INFO, JAVA_LONG, JAVA_LONG, ADDRESS);
 
       // C_Initialize — handle "already initialized" gracefully (another lib loader, e.g. SunPKCS11
       // in the same JVM, may have done it first; we still consider ourselves the eventual finalizer
@@ -394,12 +409,14 @@ final class Pkcs11Ffm implements AutoCloseable {
       // Generate AES-256 KEK on HSM (sensitive by default; we never need its bytes)
       final long kek = generateAesKek(arena, hGenerateKey, session);
       LOG.info("Generated session AES KEK: handle={}", kek);
+      final WrapMechanism wrapMech = selectWrapMechanism(arena, hGetMechanismInfo, resolvedSlot);
 
       return new Pkcs11Ffm(
           arena,
           session,
           privKey,
           kek,
+          wrapMech,
           ecPoint,
           weInitialized,
           hFinalize,
@@ -555,27 +572,27 @@ final class Pkcs11Ffm implements AutoCloseable {
         final MemorySegment pt = scope.allocate(JAVA_BYTE, 64);
 
         try {
-          // Wrap the derived secret with our long-lived KEK using AES-CBC. The 32-byte secret
-          // is exactly 2 AES blocks, so no padding is needed; CKM_AES_CBC is supported by both
-          // SoftHSM2 and Luna for wrap/decrypt. The IV is fixed all-zeros: this isn't a CBC
-          // confidentiality use — the ciphertext never leaves this method. The wrap is just
-          // half of an encrypt-decrypt-oracle pair that lets us round-trip the sensitive
-          // derived secret out of the HSM (since CKA_SENSITIVE=true blocks direct readback).
+          // Wrap the derived secret with our long-lived KEK using the mechanism selected at open
+          // time (see selectWrapMechanism). The wrap is half of an encrypt-decrypt-oracle pair
+          // that lets us round-trip the sensitive derived secret out of the HSM (since
+          // CKA_SENSITIVE=true blocks direct readback); the ciphertext never leaves this method.
+          // For CKM_AES_CBC the IV is fixed all-zeros: this isn't a CBC confidentiality use. AES
+          // Key Wrap takes no parameter.
           final MemorySegment iv = scope.allocate(JAVA_BYTE, 16); // zero-filled
-          final MemorySegment cbcMech = scope.allocate(CK_MECHANISM);
-          cbcMech.set(JAVA_LONG, 0, CKM_AES_CBC);
-          cbcMech.set(ADDRESS, 8, iv);
-          cbcMech.set(JAVA_LONG, 16, 16L);
+          final MemorySegment wrapMechSeg = scope.allocate(CK_MECHANISM);
+          wrapMechSeg.set(JAVA_LONG, 0, wrapMech.id());
+          wrapMechSeg.set(ADDRESS, 8, wrapMech.ivLen() > 0 ? iv : MemorySegment.NULL);
+          wrapMechSeg.set(JAVA_LONG, 16, (long) wrapMech.ivLen());
 
           final MemorySegment ctLen = scope.allocate(JAVA_LONG);
           ctLen.set(JAVA_LONG, 0, 64L);
           check(
-              (long) hWrapKey.invokeExact(session, cbcMech, kekHandle, hSecret, ct, ctLen),
+              (long) hWrapKey.invokeExact(session, wrapMechSeg, kekHandle, hSecret, ct, ctLen),
               "C_WrapKey");
           final long wlen = ctLen.get(JAVA_LONG, 0);
 
           // Decrypt the wrapped ciphertext with the same KEK to recover the plaintext bytes
-          check((long) hDecryptInit.invokeExact(session, cbcMech, kekHandle), "C_DecryptInit");
+          check((long) hDecryptInit.invokeExact(session, wrapMechSeg, kekHandle), "C_DecryptInit");
           final MemorySegment ptLen = scope.allocate(JAVA_LONG);
           ptLen.set(JAVA_LONG, 0, 64L);
           check((long) hDecrypt.invokeExact(session, ct, wlen, pt, ptLen), "C_Decrypt");
@@ -848,5 +865,66 @@ final class Pkcs11Ffm implements AutoCloseable {
     final MemorySegment hOut = arena.allocate(JAVA_LONG);
     check((long) hGenerateKey.invokeExact(session, mech, tmpl, 8L, hOut), "C_GenerateKey(AES)");
     return hOut.get(JAVA_LONG, 0);
+  }
+
+  /**
+   * AES mechanism used for the wrap + decrypt oracle in {@link #deriveEcdh}. {@code ivLen == 0}
+   * means the mechanism takes no parameter.
+   */
+  record WrapMechanism(String name, long id, int ivLen) {}
+
+  static final WrapMechanism AES_CBC = new WrapMechanism("CKM_AES_CBC", CKM_AES_CBC, 16);
+  static final WrapMechanism LUNA_AES_KW =
+      new WrapMechanism("CKM_AES_KW (Luna vendor 0x80000170)", CKM_LUNA_AES_KW, 0);
+
+  /** Preference order: first mechanism the token advertises for wrap + decrypt wins. */
+  private static final List<WrapMechanism> WRAP_PREFERENCE = List.of(AES_CBC, LUNA_AES_KW);
+
+  /**
+   * Picks the first mechanism in {@link #WRAP_PREFERENCE} whose {@code CK_MECHANISM_INFO.flags}
+   * include both {@code CKF_WRAP} and {@code CKF_DECRYPT}. {@code mechanismFlags} maps a mechanism
+   * id to its flags, or to a negative value if the token does not support the mechanism. Empty if
+   * none qualifies.
+   */
+  static Optional<WrapMechanism> chooseWrapMechanism(final LongUnaryOperator mechanismFlags) {
+    final long needed = CKF_WRAP | CKF_DECRYPT;
+    return WRAP_PREFERENCE.stream()
+        .filter(
+            m -> {
+              final long flags = mechanismFlags.applyAsLong(m.id());
+              return flags >= 0 && (flags & needed) == needed;
+            })
+        .findFirst();
+  }
+
+  /**
+   * Probes the token once at open time (via {@code C_GetMechanismInfo}) so a deterministic wrap
+   * mechanism is chosen up front rather than failing mid-handshake. If the token advertises none of
+   * the candidates we keep the historical {@code CKM_AES_CBC} behaviour: some tokens support a
+   * mechanism without advertising {@code CKF_WRAP}, and any real incompatibility then surfaces from
+   * {@code C_WrapKey} as before.
+   */
+  private static WrapMechanism selectWrapMechanism(
+      final Arena arena, final MethodHandle hGetMechanismInfo, final long slot) {
+    // CK_MECHANISM_INFO { CK_ULONG ulMinKeySize; CK_ULONG ulMaxKeySize; CK_FLAGS flags; }
+    final MemorySegment info = arena.allocate(24L, 8L);
+    final Optional<WrapMechanism> chosen =
+        chooseWrapMechanism(
+            id -> {
+              try {
+                final long rv = (long) hGetMechanismInfo.invokeExact(slot, id, info);
+                return rv == CKR_OK ? info.get(JAVA_LONG, 16) : -1L;
+              } catch (final Throwable t) {
+                throw new SecurityModuleException("C_GetMechanismInfo failed", t);
+              }
+            });
+    if (chosen.isPresent()) {
+      LOG.info("Selected AES wrap mechanism for ECDH recipe: {}", chosen.get().name());
+      return chosen.get();
+    }
+    LOG.warn(
+        "Token advertises neither CKM_AES_CBC nor Luna CKM_AES_KW for wrap+decrypt; "
+            + "defaulting to CKM_AES_CBC. ECDH may fail with C_WrapKey rv=0x70.");
+    return AES_CBC;
   }
 }
