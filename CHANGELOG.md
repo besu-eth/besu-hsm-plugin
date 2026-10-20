@@ -1,11 +1,12 @@
 # Changelog
 
-## Unreleased
+## 26.10.0
 
 ### Added
 - Luna Cloud HSM (Thales DPoD) deployment guide: `docs/thales-luna-cloud/README.md`
 
 ### Changed
+- Update Besu plugin version to 26.10.0
 - `native-pkcs11` now probes `C_GetMechanismInfo` once at startup and uses the first AES mechanism that advertises both wrap and decrypt: `CKM_AES_CBC` as before, otherwise Luna AES Key Wrap (`0x80000170`). Fixes `C_WrapKey ... rv=0x70` (`CKR_MECHANISM_INVALID`) on Luna HSMs in FIPS approved configuration, where `CKM_AES_CBC` cannot wrap
 
 ## 26.9.1
