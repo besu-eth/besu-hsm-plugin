@@ -23,18 +23,18 @@ second one created with the **"Disable FIPS compliance"** box ticked.
 
 | Capability | FIPS service | Non-FIPS service |
 |---|---|---|
-| PKCS#11 login through the cloud client | Works (§§2-4) | Works |
-| `secp256k1` / `secp256r1` key generation on the HSM | Works (§6) | Works |
-| ECDSA signing / QBFT block production | **Works** — 58 blocks from one validator (§8) | Works (sign ~0.4 s) |
-| `C_WrapKey` with `CKM_AES_CBC` | `0x70` — fixed by the probed mechanism (§10) | Works, probe keeps `CKM_AES_CBC` |
-| Raw ECDH (`CKD_NULL` derive) | **Rejected, `0x71`** (§9) | **Works** (plugin `deriveEcdh` returns the secret, ~2.2 s) |
-| Two-validator devp2p handshake | Cannot start (derive rejected) | Handshake **completes cryptographically** but takes ~12 s and misses Besu's 10 s limit from the test host (§9.1) |
+| PKCS#11 login through the cloud client | Works (sections [2](#2-install-the-client-no-root)–[4](#4-initialize-the-partition)) | Works |
+| `secp256k1` / `secp256r1` key generation on the HSM | Works ([section 6](#6-verify-pkcs11-access-and-generate-keys)) | Works |
+| ECDSA signing / QBFT block production | **Works** — 58 blocks from one validator ([section 8](#8-run-a-single-validator-qbft-network-works)) | Works (sign ~0.4 s) |
+| `C_WrapKey` with `CKM_AES_CBC` | `0x70` — fixed by the probed mechanism ([section 10](#10-plugin-change-probed-wrap-mechanism)) | Works, probe keeps `CKM_AES_CBC` |
+| Raw ECDH (`CKD_NULL` derive) | **Rejected, `0x71`** ([section 9](#9-multi-node-networks-ecdh-is-rejected-fips-approved-mode)) | **Works** (plugin `deriveEcdh` returns the secret, ~2.2 s) |
+| Two-validator devp2p handshake | Cannot start (derive rejected) | Handshake **completes cryptographically** but takes ~12 s and misses Besu's 10 s limit from the test host ([section 9.1](#91-non-fips-service-ecdh-works-but-the-handshake-is-too-slow-from-a-remote-host)) |
 
 The FIPS partition reports `*** The HSM is in FIPS approved operation mode.
 ***` and the operator cannot change that after creation (no partition policy
 12/43 exists on this firmware, and HSM policy 12 is HSM-wide and
 destructive). Under FIPS approved configuration Thales blocks two things this
-plugin's ECDH recipe needs; both were reproduced (§9). A single validator
+plugin's ECDH recipe needs; both were reproduced ([section 9](#9-multi-node-networks-ecdh-is-rejected-fips-approved-mode)). A single validator
 (or any setup where the node never has to do an RLPx/discv5 handshake) works
 fully on either service.
 
@@ -100,9 +100,9 @@ Quirks observed:
   (the absolute-path entry is the one that works) but confusing.
 - Because it rewrites `Chrystoki.conf`, keep an untouched copy of the zip.
 
-> **The PKCS#11 library path differs from on-prem.** Here it is
-> `~/luna-cloud-client/libs/64/libCryptoki2.so` — not
-> `/usr/safenet/lunaclient/lib/libCryptoki2_64.so`.
+> **The PKCS#11 library path for luna cloud differs from on-prem.**  
+> luna cloud: `~/luna-cloud-client/libs/64/libCryptoki2.so`  
+> on-prem: `/usr/safenet/lunaclient/lib/libCryptoki2_64.so`
 
 ## 3. Discover the slot and partition
 
@@ -133,7 +133,7 @@ slots 0-2 as `Luna G7 Slot (empty)`; ignore them.
 Every `lunacm` / `pkcs11-tool` invocation opens a fresh REST session to the
 cloud and was observed to take **roughly 7 s to over 2 min** from the test
 host. Batch commands into one `lunacm` session by piping them on stdin
-(§4) instead of running one command per invocation.
+([section 4](#4-initialize-the-partition)) instead of running one command per invocation.
 
 Capabilities seen on the fresh partition (`partition showpolicies`), against
 what this plugin needs:
@@ -144,7 +144,7 @@ what this plugin needs:
 | 5: secret key wrapping | `1` | yes |
 | 11: changing key attributes | `1` | yes |
 | 28: Key Management Functions | `1` | yes |
-| 12 / 43: allow non-FIPS algorithms | *not present* | cannot be changed (§9) |
+| 12 / 43: allow non-FIPS algorithms | *not present* | cannot be changed ([section 9](#9-multi-node-networks-ecdh-is-rejected-fips-approved-mode)) |
 
 ## 4. Initialize the partition
 
@@ -199,7 +199,7 @@ Notes:
   back up the partition.
 - Success is `Partition Label -> besu-validators`, flags
   `CKF_TOKEN_INITIALIZED` + `CKF_USER_PIN_INITIALIZED`, and
-  `Extended Token Flags -> TOKEN_KCV_CREATED`. If `TOKEN_KCV_CREATED` is
+  `Extended Token Flags -> TOKEN_KCV_CREATED`. Failure: if `TOKEN_KCV_CREATED` is
   missing, do not use the partition (Thales guidance for `partition init`).
 
 ## 5. Host tools
@@ -314,7 +314,7 @@ No other JVM flags were needed.
 
 Same genesis procedure as K7 guide §7, with one public key in
 `blockchain.nodes.keys`. On start the log shows the provider choosing a wrap
-mechanism for the Luna Cloud partition (this selection is described in §10):
+mechanism for the Luna Cloud partition (this selection is described in [section 10](#10-plugin-change-probed-wrap-mechanism)):
 
 ```
 NativePkcs11Provider | Initializing native-pkcs11 provider: lib=.../libs/64/libCryptoki2.so slot=3 ...
@@ -381,7 +381,7 @@ This matches Thales' own
   (and the 3DES / `RSA_PKCS` equivalents) are *not permitted to wrap* in
   FIPS approved configuration since firmware 7.7.0 (unwrap is allowed).
   This is the reported `C_WrapKey ... rv=0x70`; the plugin now works around
-  it (§10).
+  it ([section 10](#10-plugin-change-probed-wrap-mechanism)).
 - **Derive**: `secp256k1` "cannot be used for ECDH or ECIES derivation in
   FIPS 140 approved configuration" (documented for firmware 7.8.9 and
   newer; this service runs 7.3.0 and already rejects `CKD_NULL` for every
@@ -401,9 +401,7 @@ secret) — plus discv5 (`deriveECDHKeyAgreement`). The decode path computes
 peer signed on the wire. A Besu change that accepted an HSM-computed KDF
 output would therefore break interoperability with any peer that does not
 use the same substitute (including every software-key node) and still would
-not cover discv5. Luna JCE also failed (`Unable to derive secret key`; the
-underlying return code was not captured, so that it hits the same firmware
-rule is an inference — it sits on the same Cryptoki library).
+not cover discv5. Luna JCE also failed (`Unable to derive secret key`).
 
 Conclusion: **on a FIPS-approved-configuration Luna partition the raw ECDH
 secret Besu needs cannot be obtained from the HSM.** All tested routes
@@ -429,7 +427,7 @@ RLPx handshaker is hard-wired in Besu.
 
 ### What to do
 
-The wrap-mechanism fix in §10 is necessary but not sufficient on a partition
+The wrap-mechanism fix in [section 10](#10-plugin-change-probed-wrap-mechanism) is necessary but not sufficient on a partition
 that also rejects `CKD_NULL`. Options, in order of preference:
 
 1. **Use a non-FIPS Luna partition for validators that must peer** — an
@@ -440,14 +438,14 @@ that also rejects `CKD_NULL`. Options, in order of preference:
    used here (FIPS on). The setting is fixed when the service is created, and
    a cloud user cannot flip an existing service (HSM policy 12 is HSM-wide
    and destructive), so the service must be re-created. Validated: a
-   non-FIPS cloud service accepts `CKD_NULL` derive (§9.1).
-2. **Single validator only** on the FIPS cloud service (§8). Useful for
+   non-FIPS cloud service accepts `CKD_NULL` derive ([section 9.1](#91-non-fips-service-ecdh-works-but-the-handshake-is-too-slow-from-a-remote-host)).
+2. **Single validator only** on the FIPS cloud service ([section 8](#8-run-a-single-validator-qbft-network-works)). Useful for
    testing the PKCS#11 path and signing, not for a real network.
 3. **Keep signing on the HSM, node key in software** is not supported by
    this plugin today: one HSM key serves both signing and ECDH.
 
 If your own Luna Cloud service is **not** returning `0x71` on derive but
-returns `C_WrapKey ... rv=0x70`, that is the case §10 fixes.
+returns `C_WrapKey ... rv=0x70`, that is the case [section 10](#10-plugin-change-probed-wrap-mechanism) fixes.
 
 ### 9.1 Non-FIPS service: ECDH works, but the handshake is too slow from a remote host
 
@@ -506,7 +504,7 @@ not regress. The selection logic is unit-tested in
 
 Evidence on the live service: `C_GetMechanismInfo` reports `AES-CBC` without
 `wrap`; the probe selects `CKM_AES_KW (0x80000170)`; with a derive that
-succeeds, wrap + decrypt returns the 32-byte secret (§9 table). The
+succeeds, wrap + decrypt returns the 32-byte secret ([section 9](#9-multi-node-networks-ecdh-is-rejected-fips-approved-mode) table). The
 `0x80000170` / `0x80000171` ids are identified as AES KW / KWP from the
 mechanism flags and Thales' `CKM_AES_KW` page (FIPS-approved, encrypt,
 decrypt, wrap, unwrap); they were not cross-checked against a Luna
@@ -516,16 +514,16 @@ decrypt, wrap, unwrap); they were not cross-checked against a Luna
 
 | Symptom | Cause / fix |
 |---|---|
-| `lunacm` shows no slots, or Besu cannot find the token | `ChrystokiConfigurationPath` not set for that process (§7), or `setenv` not sourced |
-| Slot label blank, `Zeroized` | Partition not initialized (§4) |
+| `lunacm` shows no slots, or Besu cannot find the token | `ChrystokiConfigurationPath` not set for that process ([section 7](#7-plugin-configuration)), or `setenv` not sourced |
+| Slot label blank, `Zeroized` | Partition not initialized ([section 4](#4-initialize-the-partition)) |
 | `CKR_PIN_EXPIRED` | CO initial password not changed yet (`role changepw`) |
 | Very slow `lunacm` or `pkcs11-tool` | Each call opens a cloud REST session (7 s to minutes); batch commands |
-| `SecurityModuleException: ... C_DeriveKey ... rv=0x71` | FIPS approved mode rejects raw ECDH (`CKD_NULL`); see §9 |
-| `C_WrapKey ... rv=0x70` | CBC not permitted to wrap; fixed by the probed mechanism (§10) |
+| `SecurityModuleException: ... C_DeriveKey ... rv=0x71` | FIPS approved mode rejects raw ECDH (`CKD_NULL`); see [section 9](#9-multi-node-networks-ecdh-is-rejected-fips-approved-mode) |
+| `C_WrapKey ... rv=0x70` | CBC not permitted to wrap; fixed by the probed mechanism ([section 10](#10-plugin-change-probed-wrap-mechanism)) |
 | `0x8000002f` from derive | Peer point not DER-wrapped (`04 41 04 \|\| X \|\| Y`) |
 | `warning ... ALWAYS_AUTHENTICATE ... 0x12` | Cosmetic `pkcs11-tool` message |
 | `SIGSEGV ... plugin_finalize` on JVM exit | Known Luna client issue on shutdown, cosmetic (see K7 guide) |
-| `Error: Unknown command line argument` from `setenv` | Sourced from a script with arguments; run `set --` first (§2) |
+| `Error: Unknown command line argument` from `setenv` | Sourced from a script with arguments; run `set --` first ([section 2](#2-install-the-client-no-root)) |
 
 ## Cleanup
 
